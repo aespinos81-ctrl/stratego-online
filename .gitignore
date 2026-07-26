@@ -1,0 +1,10 @@
+# Dependencias descargadas: se reinstalan con npm install, no hay que guardarlas
+node_modules/
+
+# Resultado de compilar el cliente
+dist/
+client/dist/
+
+# Basurilla del sistema
+.DS_Store
+*.log
