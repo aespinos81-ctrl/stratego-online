@@ -37,6 +37,7 @@ stratego-online/
 ├── package.json         ← marca todo el proyecto como ESM ("type": "module")
 │
 ├── shared/              ← reglas del juego (las usan cliente Y servidor)
+│   ├── lagos.js         ← disposiciones de agua (clásica, reducida, aleatoria…)
 │   ├── pieces.js        ← definición de las 12 piezas y el tablero
 │   └── rules.js         ← combates, movimientos válidos, victoria
 │
@@ -166,6 +167,14 @@ lagos, victoria por bandera o por quedarse sin movimientos, validación del
 despliegue en el servidor y **regla de las dos casillas** (`MAX_SHUTTLE_MOVES`
 en `shared/rules.js`: una pieza no puede hacer el vaivén entre las mismas dos
 casillas más de 3 turnos seguidos).
+
+**Zonas de agua** (en `shared/lagos.js`): la disposición ya no es fija. Hay
+cuatro opciones —**clásica** (8 casillas), **reducida** (4), **aleatoria** (se
+sortea) y **sin agua**— y se elige en la pantalla de despliegue. Toda
+disposición es simétrica al girar el tablero 180°, o un jugador saldría
+beneficiado; el sorteo además garantiza tres columnas libres para que el centro
+no se convierta en un embudo. El servidor guarda la suya en `Game` y la envía en
+`state.lagos` para que el navegador sepa dibujar el tablero.
 
 **Movimiento** (en `shared/rules.js`, lo usan cliente y servidor):
 - Explorador: línea recta sin límite.

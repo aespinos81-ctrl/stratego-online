@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { theme as T, FONTS } from "./theme.js";
+import { CONFIGURACIONES_AGUA, crearLagos, esLago } from "../../shared/lagos.js";
 
 // ─── CONSTANTES ───────────────────────────────────────────────────────────────
 // `display` es lo que se pinta en la ficha: el rango en números romanos.
@@ -28,13 +29,11 @@ const ESCALA_NUMERAL = { 1: 1, 2: 0.82, 3: 0.70, 4: 0.58 };
 const escalaNumeral = txt => ESCALA_NUMERAL[txt.length] ?? 0.54;
 
 const PIECE_NAMES = Object.keys(PIECES);
-const LAKES = [[4,2],[5,2],[4,3],[5,3],[4,6],[5,6],[4,7],[5,7]];
-const isLake = (r, c) => LAKES.some(([lr, lc]) => lr === r && lc === c);
 const CELL = 58;
 const GAP = 2;
 
 // Mi zona de despliegue son las cuatro filas de abajo
-const enMiZona = (r, c) => r >= 6 && !isLake(r, c);
+const enMiZona = (lagos, r, c) => r >= 6 && !esLago(lagos, r, c);
 
 // Nombre de casilla para el registro: columna en letra, fila en número
 const coord = (r, c) => `${String.fromCharCode(65 + c)}${r + 1}`;
@@ -96,7 +95,7 @@ const alcanceDe = name =>
   : PIECES[name].rank >= RANGO_OFICIAL ? ALCANCE_OFICIALES
   : 1;
 
-function getValidMoves(board, row, col) {
+function getValidMoves(board, row, col, lagos) {
   const piece = board[row][col];
   if (!piece || piece.name === "Bomb" || piece.name === "Flag") return [];
   const alcance = alcanceDe(piece.name);
@@ -105,7 +104,7 @@ function getValidMoves(board, row, col) {
     let r = row + dr, c = col + dc, pasos = 1;
     // Avanza en línea recta hasta agotar su alcance. Nadie salta por encima de
     // nada: la primera pieza o lago que encuentre le corta el paso.
-    while (pasos <= alcance && r >= 0 && r < 10 && c >= 0 && c < 10 && !isLake(r, c)) {
+    while (pasos <= alcance && r >= 0 && r < 10 && c >= 0 && c < 10 && !esLago(lagos, r, c)) {
       const t = board[r][c];
       if (t) { if (t.player !== piece.player) moves.push([r, c]); break; }
       moves.push([r, c]);
@@ -115,24 +114,24 @@ function getValidMoves(board, row, col) {
   return moves;
 }
 
-function aiSetup() {
+function aiSetup(lagos) {
   const pool = shuffle(createPool());
   const board = Array.from({length: 10}, () => Array(10).fill(null));
   let idx = 0;
   for (let r = 0; r < 4; r++)
     for (let c = 0; c < 10; c++)
-      if (!isLake(r, c) && idx < pool.length)
+      if (!esLago(lagos, r, c) && idx < pool.length)
         board[r][c] = { name: pool[idx++], player: "ai", revealed: false };
   return board;
 }
 
-function aiMove(board) {
+function aiMove(board, lagos) {
   const moves = [];
   for (let r = 0; r < 10; r++)
     for (let c = 0; c < 10; c++) {
       const p = board[r][c];
       if (p?.player !== "ai") continue;
-      for (const [tr, tc] of getValidMoves(board, r, c)) {
+      for (const [tr, tc] of getValidMoves(board, r, c, lagos)) {
         const t = board[tr][tc];
         let score = (tr - r) * 4;
         if (t?.player === "human") {
@@ -152,11 +151,11 @@ function aiMove(board) {
   return moves.slice(0, Math.min(6, moves.length))[Math.floor(Math.random() * Math.min(6, moves.length))];
 }
 
-function checkWinner(board) {
+function checkWinner(board, lagos) {
   const hFlag = board.flat().some(p => p?.name === "Flag" && p?.player === "human");
   const aFlag = board.flat().some(p => p?.name === "Flag" && p?.player === "ai");
-  const hMoves = board.some((row, r) => row.some((_, c) => board[r][c]?.player === "human" && getValidMoves(board, r, c).length > 0));
-  const aMoves = board.some((row, r) => row.some((_, c) => board[r][c]?.player === "ai"   && getValidMoves(board, r, c).length > 0));
+  const hMoves = board.some((row, r) => row.some((_, c) => board[r][c]?.player === "human" && getValidMoves(board, r, c, lagos).length > 0));
+  const aMoves = board.some((row, r) => row.some((_, c) => board[r][c]?.player === "ai"   && getValidMoves(board, r, c, lagos).length > 0));
   if (!aFlag || !aMoves) return "human";
   if (!hFlag || !hMoves) return "ai";
   return null;
@@ -345,7 +344,7 @@ const PanelTitle = ({ children }) => (
 );
 
 // ─── FASE DE DESPLIEGUE ───────────────────────────────────────────────────────
-function SetupPhase({ onReady }) {
+function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua }) {
   const [placed, setPlaced] = useState(Array.from({length:10}, () => Array(10).fill(null)));
   // Qué tenemos "en la mano": una pieza de la bandeja, o una ya puesta en el
   // tablero que queremos recolocar.
@@ -395,7 +394,7 @@ function SetupPhase({ onReady }) {
   }
 
   function clickCell(r, c) {
-    if (!enMiZona(r, c)) { setSel(null); return; }
+    if (!enMiZona(lagos, r, c)) { setSel(null); return; }
 
     // Traigo una pieza de la bandeja
     if (sel?.kind === "tray") {
@@ -420,14 +419,14 @@ function SetupPhase({ onReady }) {
 
   function clickDerecho(e, r, c) {
     e.preventDefault();
-    if (!enMiZona(r, c)) return;
+    if (!enMiZona(lagos, r, c)) return;
     if (placed[r][c]) { quitar(r, c); setSel(null); }
   }
 
   // ── Interacción: arrastrar y soltar ──────────────────────────────────────
   function soltarEn(r, c) {
     setDragOver(null);
-    if (!enMiZona(r, c) || !sel) return;
+    if (!enMiZona(lagos, r, c) || !sel) return;
     if (sel.kind === "tray") {
       if (remaining[sel.name] > 0) colocar(r, c, sel.name);
       setSel(null);
@@ -443,7 +442,7 @@ function SetupPhase({ onReady }) {
     let i = 0;
     for (let r = 6; r < 10; r++)
       for (let c = 0; c < 10; c++)
-        if (!isLake(r, c) && i < pool.length) nb[r][c] = pool[i++];
+        if (!esLago(lagos, r, c) && i < pool.length) nb[r][c] = pool[i++];
     setPlaced(nb);
     setSel(null);
   }
@@ -455,7 +454,7 @@ function SetupPhase({ onReady }) {
 
   function startGame() {
     if (!allPlaced) return;
-    const aiBoard = aiSetup();
+    const aiBoard = aiSetup(lagos);
     for (let r = 6; r < 10; r++)
       for (let c = 0; c < 10; c++)
         aiBoard[r][c] = placed[r][c]
@@ -513,6 +512,29 @@ function SetupPhase({ onReady }) {
         })}
       </div>
 
+      {/* Selector de zonas de agua */}
+      <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", justifyContent:"center" }}>
+        <span style={{ fontSize:11, color:T.textSoft, letterSpacing:1.4, fontWeight:700, textTransform:"uppercase" }}>
+          Agua
+        </span>
+        {Object.entries(CONFIGURACIONES_AGUA).map(([id, cfg]) => {
+          const activa = aguaId === id;
+          return (
+            <button key={id} onClick={() => onCambiarAgua(id)} title={cfg.detalle}
+              style={{
+                padding:"5px 12px", borderRadius:20,
+                background: activa ? T.brassFaint : "rgba(247,238,221,0.05)",
+                border: activa ? `1.5px solid ${T.brass}` : `1px solid ${T.panelBorder}`,
+                color: activa ? T.brassBright : T.textSoft,
+                fontFamily:FONTS.ui, fontSize:11.5, fontWeight: activa ? 700 : 500,
+                cursor:"pointer", transition:"all 0.12s",
+              }}>
+              {cfg.label}{activa && cfg.aleatoria ? " ↻" : ""}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Tablero */}
       <div style={{
         padding:10, borderRadius:12,
@@ -522,9 +544,9 @@ function SetupPhase({ onReady }) {
         <div style={{ display:"grid", gridTemplateColumns:`repeat(10,${CELL}px)`, gap:GAP }}>
           {Array.from({length:10}, (_, r) =>
             Array.from({length:10}, (__, c) => {
-              const lake = isLake(r, c);
+              const lake = esLago(lagos, r, c);
               const p = placed[r][c];
-              const mia = enMiZona(r, c);
+              const mia = enMiZona(lagos, r, c);
               const enemiga = r < 4;
               const puedoSoltar = mia && sel;
               const encima = dragOver && dragOver[0] === r && dragOver[1] === c;
@@ -765,7 +787,7 @@ function AiMoveArrow({ aiMoveAnim }) {
 }
 
 // ─── TABLERO DE JUEGO ─────────────────────────────────────────────────────────
-function GameBoard({ board: initBoard, onReset }) {
+function GameBoard({ board: initBoard, onReset, lagos }) {
   const [board, setBoard]         = useState(initBoard);
   const [selCell, setSelCell]     = useState(null);
   const [validMoves, setValidMoves] = useState([]);
@@ -853,7 +875,7 @@ function GameBoard({ board: initBoard, onReset }) {
       setBoard(nb);
       if (mensaje) addLog(mensaje);
       anotarBajas(caidas);
-      const winner = checkWinner(nb);
+      const winner = checkWinner(nb, lagos);
       if (winner) { setGameOver(winner); return; }
       despues();
     }, COMBATE_REVELAR + COMBATE_DESTRUIR);
@@ -863,7 +885,7 @@ function GameBoard({ board: initBoard, onReset }) {
     setTurn("ai");
     setAiThinking(true);
     programar(() => {
-      const move = aiMove(b);
+      const move = aiMove(b, lagos);
       if (!move) { setTurn("human"); setAiThinking(false); return; }
       setAiThinking(false);
       setAiMoveAnim({ ...move });
@@ -880,7 +902,7 @@ function GameBoard({ board: initBoard, onReset }) {
           return;
         }
         setBoard(res.nb);
-        const winner = checkWinner(res.nb);
+        const winner = checkWinner(res.nb, lagos);
         if (winner) { setGameOver(winner); return; }
         setTurn("human");
       }, 950);
@@ -901,19 +923,19 @@ function GameBoard({ board: initBoard, onReset }) {
           return;
         }
         setBoard(res.nb);
-        const winner = checkWinner(res.nb);
+        const winner = checkWinner(res.nb, lagos);
         if (winner) { setGameOver(winner); return; }
         doAiTurn(res.nb);
       } else if (piece?.player === "human") {
         setSelCell([r,c]);
-        setValidMoves(getValidMoves(board, r, c));
+        setValidMoves(getValidMoves(board, r, c, lagos));
       } else {
         setSelCell(null); setValidMoves([]);
       }
     } else {
       if (piece?.player === "human") {
         setSelCell([r,c]);
-        setValidMoves(getValidMoves(board, r, c));
+        setValidMoves(getValidMoves(board, r, c, lagos));
       }
     }
   }
@@ -984,7 +1006,7 @@ function GameBoard({ board: initBoard, onReset }) {
             <div style={{ display:"grid", gridTemplateColumns:`repeat(10,${CELL}px)`, gap:GAP }}>
               {board.map((row, r) =>
                 row.map((piece, c) => {
-                  const lake       = isLake(r, c);
+                  const lake       = esLago(lagos, r, c);
                   const sel2       = isSel(r, c);
                   const valid      = isValid(r, c);
                   const isHuman    = piece?.player === "human";
@@ -1105,6 +1127,17 @@ export default function Stratego() {
   const [phase, setPhase] = useState("setup");
   const [gameBoard, setGameBoard] = useState(null);
 
+  // Configuración de agua elegida, y las casillas que le corresponden. Se guarda
+  // aquí arriba porque tiene que sobrevivir al paso de despliegue a partida.
+  const [aguaId, setAguaId] = useState("clasica");
+  const [lagos, setLagos] = useState(() => crearLagos("clasica"));
+
+  // Volver a pulsar "Aleatoria" vuelve a sortear
+  function cambiarAgua(id) {
+    setAguaId(id);
+    setLagos(crearLagos(id));
+  }
+
   return (
     <div style={{
       minHeight:"100vh", background:T.pageBg,
@@ -1186,10 +1219,16 @@ export default function Stratego() {
       </div>
 
       {phase === "setup" && (
-        <SetupPhase onReady={b => { setGameBoard(b); setPhase("game"); }} />
+        <SetupPhase
+          onReady={b => { setGameBoard(b); setPhase("game"); }}
+          lagos={lagos} aguaId={aguaId} onCambiarAgua={cambiarAgua}
+        />
       )}
       {phase === "game" && gameBoard && (
-        <GameBoard board={gameBoard} onReset={() => { setGameBoard(null); setPhase("setup"); }} />
+        <GameBoard
+          board={gameBoard} lagos={lagos}
+          onReset={() => { setGameBoard(null); setPhase("setup"); }}
+        />
       )}
     </div>
   );

@@ -92,6 +92,26 @@ test("el servidor corta el vaivén infinito entre dos casillas", () => {
   assert.equal(rechazado, 3, "el cuarto vaivén seguido debe rechazarse");
 });
 
+test("sin agua se puede cruzar por donde antes había lago", () => {
+  const conAgua = partidaEnJuego();                    // clásica por defecto
+  const sinAgua = new Game("TEST", "ninguna");
+  sinAgua.players = { p1: "s1", p2: "s2" };
+  sinAgua.setPlacement("p1", despliegueValido());
+  sinAgua.setPlacement("p2", despliegueValido());
+
+  // (5,2) es lago en la disposición clásica: nadie puede entrar ahí
+  assert.equal(conAgua.applyMove("p1", 6, 2, 5, 2).ok, false);
+  // sin agua, la misma jugada es legal
+  assert.equal(sinAgua.applyMove("p1", 6, 2, 5, 2).ok, true);
+});
+
+test("la vista incluye las casillas de agua para poder dibujar el tablero", () => {
+  const clasica = new Game("A");
+  const despejada = new Game("B", "ninguna");
+  assert.equal(clasica.viewFor("p1").lagos.length, 8);
+  assert.equal(despejada.viewFor("p1").lagos.length, 0);
+});
+
 test("viewFor oculta las piezas del rival pero no las tuyas", () => {
   const g = partidaEnJuego();
   const vista = g.viewFor("p1");

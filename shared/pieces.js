@@ -22,13 +22,18 @@ export const PIECES = {
 
 export const PIECE_NAMES = Object.keys(PIECES);
 
-// Lagos: casillas intransitables en el centro del tablero 10x10
+// Lagos: casillas intransitables del centro del tablero. La disposición ya no
+// es fija — ver shared/lagos.js —, así que las funciones que la necesitan la
+// reciben como un conjunto de claves "fila,columna". Si no se les pasa ninguna,
+// usan la clásica, que es lo que esperan las partidas normales.
 export const LAKES = [
   [4, 2], [5, 2], [4, 3], [5, 3],
   [4, 6], [5, 6], [4, 7], [5, 7],
 ];
 
-export const isLake = (r, c) => LAKES.some(([lr, lc]) => lr === r && lc === c);
+export const LAGOS_CLASICOS = new Set(LAKES.map(([r, c]) => `${r},${c}`));
+
+export const isLake = (r, c, lagos = LAGOS_CLASICOS) => lagos.has(`${r},${c}`);
 
 // El total de piezas de un ejército (debe ser 40)
 export const TOTAL_PIECES = PIECE_NAMES.reduce((sum, n) => sum + PIECES[n].count, 0);

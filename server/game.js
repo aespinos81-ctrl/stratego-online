@@ -7,6 +7,7 @@
 
 import { resolveBattle, isLegalMove, checkWinner, validateSetup } from "../shared/rules.js";
 import { setupRowsFor, BOARD_SIZE } from "../shared/pieces.js";
+import { crearLagos } from "../shared/lagos.js";
 
 // Cuántos movimientos recientes guardamos de cada jugador. Solo se usan para la
 // regla de las dos casillas, así que con unos pocos sobra.
@@ -17,8 +18,13 @@ const dentroDelTablero = (r, c) =>
   r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE;
 
 export class Game {
-  constructor(id) {
+  // `agua` es el identificador de la disposición de lagos (ver shared/lagos.js).
+  // Se fija al crear la partida y ya no cambia: las dos partes tienen que estar
+  // de acuerdo sobre qué casillas son intransitables.
+  constructor(id, agua = "clasica") {
     this.id = id;
+    this.agua = agua;
+    this.lagos = crearLagos(agua);
     this.board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
     this.players = {};        // { p1: socketId, p2: socketId }
     this.ready = { p1: false, p2: false };
@@ -58,7 +64,7 @@ export class Game {
       return { ok: false, reason: "Casilla fuera del tablero." };
     }
     // isLegalMove comprueba también la regla de las dos casillas con el historial
-    if (!isLegalMove(this.board, fromR, fromC, toR, toC, player, this.history[player])) {
+    if (!isLegalMove(this.board, fromR, fromC, toR, toC, player, this.history[player], this.lagos)) {
       return { ok: false, reason: "Movimiento no válido." };
     }
 
@@ -94,7 +100,7 @@ export class Game {
     if (this.history[player].length > HISTORY_LENGTH) this.history[player].pop();
 
     // Comprobar victoria y pasar turno
-    const w = checkWinner(this.board);
+    const w = checkWinner(this.board, this.lagos);
     if (w) {
       this.winner = w;
       this.phase = "finished";
@@ -122,6 +128,8 @@ export class Game {
       turn: this.turn,
       phase: this.phase,
       winner: this.winner,
+      // Las casillas de agua, para que el navegador sepa dibujar el tablero
+      lagos: [...this.lagos],
       // Su PROPIO historial (no el del rival), para que la interfaz pueda no
       // ofrecer el movimiento que la regla de las dos casillas va a rechazar.
       history: this.history[player],

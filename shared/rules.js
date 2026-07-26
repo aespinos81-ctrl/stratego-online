@@ -5,7 +5,7 @@
 // de Stratego. El SERVIDOR es quien manda: valida cada movimiento con estas
 // mismas funciones para que nadie pueda hacer trampas desde el navegador.
 
-import { PIECES, PIECE_NAMES, isLake, TOTAL_PIECES, BOARD_SIZE, SETUP_ROWS } from "./pieces.js";
+import { PIECES, PIECE_NAMES, isLake, LAGOS_CLASICOS, TOTAL_PIECES, BOARD_SIZE, SETUP_ROWS } from "./pieces.js";
 
 // ── ¿Quién gana un combate? ──────────────────────────────────────────────────
 // Devuelve "attacker", "defender" o "both" (ambos eliminados).
@@ -37,7 +37,7 @@ export function alcanceDe(name) {
 // ── ¿A dónde puede moverse una pieza? ────────────────────────────────────────
 // board: matriz 10x10 de { name, player } | null
 // Devuelve una lista de [fila, columna] destino válidas.
-export function getValidMoves(board, row, col) {
+export function getValidMoves(board, row, col, lagos = LAGOS_CLASICOS) {
   const piece = board[row][col];
   if (!piece) return [];
   if (piece.name === "Bomb" || piece.name === "Flag") return []; // no se mueven
@@ -50,7 +50,7 @@ export function getValidMoves(board, row, col) {
     let r = row + dr, c = col + dc, pasos = 1;
     // Avanza en línea recta hasta agotar su alcance. Nadie salta por encima de
     // nada: la primera pieza o lago que encuentre le corta el paso.
-    while (pasos <= alcance && r >= 0 && r < 10 && c >= 0 && c < 10 && !isLake(r, c)) {
+    while (pasos <= alcance && r >= 0 && r < 10 && c >= 0 && c < 10 && !isLake(r, c, lagos)) {
       const target = board[r][c];
       if (target) {
         if (target.player !== piece.player) moves.push([r, c]); // puede atacar
@@ -98,10 +98,10 @@ export function violatesTwoSquares(history, fromR, fromC, toR, toC) {
 // ── ¿Es legal este movimiento concreto? ──────────────────────────────────────
 // El servidor llama a esto antes de aplicar nada.
 // history es opcional: si se pasa, también se comprueba la regla de las dos casillas.
-export function isLegalMove(board, fromR, fromC, toR, toC, player, history = []) {
+export function isLegalMove(board, fromR, fromC, toR, toC, player, history = [], lagos = LAGOS_CLASICOS) {
   const piece = board[fromR][fromC];
   if (!piece || piece.player !== player) return false; // no es tu pieza
-  if (!getValidMoves(board, fromR, fromC).some(([r, c]) => r === toR && c === toC)) return false;
+  if (!getValidMoves(board, fromR, fromC, lagos).some(([r, c]) => r === toR && c === toC)) return false;
   if (violatesTwoSquares(history, fromR, fromC, toR, toC)) return false;
   return true;
 }
@@ -110,13 +110,13 @@ export function isLegalMove(board, fromR, fromC, toR, toC, player, history = [])
 // Igual que getValidMoves, pero descartando los que rompen la regla de las dos
 // casillas. Úsalo en la interfaz para no ofrecer una jugada que el servidor va
 // a rechazar.
-export function getLegalMoves(board, row, col, history = []) {
-  return getValidMoves(board, row, col)
+export function getLegalMoves(board, row, col, history = [], lagos = LAGOS_CLASICOS) {
+  return getValidMoves(board, row, col, lagos)
     .filter(([r, c]) => !violatesTwoSquares(history, row, col, r, c));
 }
 
 // ── ¿Ha terminado la partida? Devuelve "p1", "p2" o null ─────────────────────
-export function checkWinner(board) {
+export function checkWinner(board, lagos = LAGOS_CLASICOS) {
   let flags = { p1: false, p2: false };
   let movable = { p1: false, p2: false };
 
@@ -125,7 +125,7 @@ export function checkWinner(board) {
       const p = board[r][c];
       if (!p) continue;
       if (p.name === "Flag") flags[p.player] = true;
-      if (getValidMoves(board, r, c).length > 0) movable[p.player] = true;
+      if (getValidMoves(board, r, c, lagos).length > 0) movable[p.player] = true;
     }
   }
 
