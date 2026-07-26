@@ -36,6 +36,9 @@ const GAP = 2;
 // Mi zona de despliegue son las cuatro filas de abajo
 const enMiZona = (r, c) => r >= 6 && !isLake(r, c);
 
+// Nombre de casilla para el registro: columna en letra, fila en número
+const coord = (r, c) => `${String.fromCharCode(65 + c)}${r + 1}`;
+
 // Color de la barrita de rango que lleva cada ficha al pie
 function rankAccent(name) {
   if (!name) return T.textDim;
@@ -209,8 +212,42 @@ function PieceTile({ name, owner = "mine", scale = 1, dim = false }) {
   );
 }
 
-// Dorso de ficha enemiga: no revela nada, solo el emblema de latón
-function HiddenTile() {
+// Ficha en miniatura, para la bandeja, el panel de reglas y el cementerio
+function MiniFicha({ name, owner = "mine", size = 24, apagada = false }) {
+  const skin = owner === "mine" ? T.mine : T.theirs;
+  const d = PIECES[name];
+  return (
+    <span title={d.label} style={{
+      width:size, height:size, borderRadius:size * 0.22, flexShrink:0,
+      background: apagada ? "rgba(0,0,0,0.25)" : skin.bg,
+      border:`1px solid ${apagada ? T.textDim : skin.border}`,
+      display:"inline-flex", alignItems:"center", justifyContent:"center",
+      position:"relative", overflow:"hidden",
+    }}>
+      <span style={{
+        fontFamily:FONTS.rank, fontWeight:600, letterSpacing:0.3,
+        fontSize: size * 0.62 * escalaNumeral(d.display),
+        color: apagada ? T.textDim : skin.ink, marginBottom:1,
+      }}>{d.display}</span>
+      <span style={{
+        position:"absolute", bottom:0, left:0, width:"100%",
+        height: Math.max(2, size * 0.11),
+        background: apagada ? T.textDim : rankAccent(name),
+      }}/>
+    </span>
+  );
+}
+
+// Dorso de ficha enemiga: no revela nada, solo el emblema de latón.
+// Encima lleva lo que hayas podido DEDUCIR de ella:
+//   · un punto  → esta pieza se ha movido, así que no es bomba ni bandera
+//   · un "II"   → se movió varias casillas de golpe: solo el Explorador puede
+function HiddenTile({ movida, explorador }) {
+  const marca = explorador
+    ? { texto: "II", pista: "Se movió varias casillas: solo puede ser un Explorador" }
+    : movida
+      ? { texto: "", pista: "Ya se ha movido: no puede ser bomba ni bandera" }
+      : null;
   return (
     <div style={{
       width:"90%", height:"90%", borderRadius:7,
@@ -224,11 +261,68 @@ function HiddenTile() {
         background:`repeating-linear-gradient(45deg, ${T.hidden.pattern} 0px, ${T.hidden.pattern} 3px, transparent 3px, transparent 8px)`,
       }}/>
       <span style={{ fontSize:18, color:T.hidden.emblem, position:"relative" }}>✦</span>
+      {marca && (
+        <span title={marca.pista} style={{
+          position:"absolute", right:3, bottom:3,
+          minWidth: marca.texto ? 13 : 6, height: marca.texto ? 11 : 6,
+          padding: marca.texto ? "0 2px" : 0,
+          borderRadius: marca.texto ? 3 : "50%",
+          background:T.brass,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          fontFamily:FONTS.rank, fontSize:8, fontWeight:700, color:"#3B2A18",
+          lineHeight:1,
+        }}>{marca.texto}</span>
+      )}
     </div>
   );
 }
 
 const Lake = () => <span style={{ fontSize:20, color:T.lakeWave }}>〰</span>;
+
+// ─── CEMENTERIO ───────────────────────────────────────────────────────────────
+// Qué piezas ha perdido cada bando. En un tablero de verdad las ves apartadas a
+// un lado; aquí había que enseñarlas. Saber cuántas bombas quedan por salir
+// cambia por completo cómo se juega el final.
+function Cementerio({ bajas }) {
+  const ordenar = lista => [...lista].sort((a, b) => PIECES[b].rank - PIECES[a].rank);
+
+  // Cuántas quedan vivas de un tipo concreto
+  const quedan = (lado, name) =>
+    PIECES[name].count - bajas[lado].filter(n => n === name).length;
+
+  const bando = (lado, etiqueta, owner) => (
+    <div style={{ marginBottom:8 }}>
+      <div style={{ fontSize:10, color:T.textSoft, marginBottom:4, fontWeight:600 }}>
+        {etiqueta} <span style={{ color:T.textDim }}>· {bajas[lado].length} de 40</span>
+      </div>
+      {bajas[lado].length === 0 ? (
+        <div style={{ fontSize:10, color:T.textDim }}>sin bajas</div>
+      ) : (
+        <div style={{ display:"flex", flexWrap:"wrap", gap:3, opacity:0.8 }}>
+          {ordenar(bajas[lado]).map((n, i) => (
+            <MiniFicha key={i} name={n} owner={owner} size={19} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div style={{ padding:13, borderRadius:10, background:T.panelBg, border:`1px solid ${T.panelBorder}` }}>
+      <PanelTitle>Bajas</PanelTitle>
+      {bando("ai", "La IA ha perdido", "theirs")}
+      {bando("human", "Has perdido", "mine")}
+      {/* Las dos cuentas que de verdad deciden el final de la partida */}
+      <div style={{
+        borderTop:`1px solid ${T.panelBorder}`, paddingTop:7, marginTop:2,
+        fontSize:10.5, color:T.textSoft, lineHeight:1.5,
+      }}>
+        <div>Bombas · IA <b style={{color:T.text}}>{quedan("ai","Bomb")}</b> · tú <b style={{color:T.text}}>{quedan("human","Bomb")}</b></div>
+        <div>Mineros · IA <b style={{color:T.text}}>{quedan("ai","Miner")}</b> · tú <b style={{color:T.text}}>{quedan("human","Miner")}</b></div>
+      </div>
+    </div>
+  );
+}
 
 // Encabezado de panel lateral
 const PanelTitle = ({ children }) => (
@@ -399,23 +493,7 @@ function SetupPhase({ onReady }) {
                 fontFamily:FONTS.ui, fontSize:12,
                 opacity: done ? 0.4 : 1, transition:"all 0.12s",
               }}>
-              <span style={{
-                width:24, height:24, borderRadius:5, flexShrink:0,
-                background: done ? "transparent" : T.mine.bg,
-                border: `1px solid ${done ? T.textDim : T.mine.border}`,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                position:"relative", overflow:"hidden",
-              }}>
-                <span style={{
-                  fontFamily:FONTS.rank, fontWeight:600, letterSpacing:0.3,
-                  fontSize: 15 * escalaNumeral(PIECES[name].display),
-                  color: done ? T.textDim : T.mine.ink, marginBottom:1,
-                }}>{PIECES[name].display}</span>
-                <span style={{
-                  position:"absolute", bottom:0, left:0, width:"100%", height:3,
-                  background: done ? T.textDim : rankAccent(name),
-                }}/>
-              </span>
+              <MiniFicha name={name} size={24} apagada={done} />
               <span>{PIECES[name].label}</span>
               <b style={{ color: done ? T.textDim : T.brass }}>×{remaining[name]}</b>
             </button>
@@ -685,6 +763,8 @@ function GameBoard({ board: initBoard, onReset }) {
   const [log, setLog]             = useState(["¡La batalla comienza!"]);
   const [aiMoveAnim, setAiMoveAnim] = useState(null);
   const [aiThinking, setAiThinking] = useState(false);
+  const [bajas, setBajas]         = useState({ human: [], ai: [] });
+  const [ultimoMov, setUltimoMov] = useState(null);   // última jugada de la IA
 
   // Todos los temporizadores en marcha, para poder cancelarlos si el jugador
   // reinicia la partida a media animación.
@@ -692,38 +772,73 @@ function GameBoard({ board: initBoard, onReset }) {
   useEffect(() => () => timersRef.current.forEach(clearTimeout), []);
   const programar = (fn, ms) => { timersRef.current.push(setTimeout(fn, ms)); };
 
-  const addLog = msg => setLog(prev => [msg, ...prev].slice(0, 18));
+  // 30 entradas: ahora que se apunta cada jugada de la IA, con 18 los combates
+  // desaparecían del registro en cuatro turnos.
+  const addLog = msg => setLog(prev => [msg, ...prev].slice(0, 30));
 
+  // Calcula el resultado de un movimiento SIN tocar ningún estado: devuelve el
+  // tablero nuevo, el combate si lo hubo, el texto para el registro y las bajas.
+  // Es importante que sea puro: durante un combate el tablero no se actualiza
+  // hasta que termina la escena, y si el registro o el cementerio se apuntaran
+  // aquí, cantarían el resultado segundo y medio antes de tiempo.
   function applyMove(b, fr, fc, tr, tc) {
     const nb = b.map(row => row.map(c => c ? {...c} : null));
     const piece = nb[fr][fc];
     const target = nb[tr][tc];
-    let battleInfo = null;
+    const distancia = Math.abs(tr - fr) + Math.abs(tc - fc);
+
+    // Marcas de deducción: quien se mueve no es bomba ni bandera, y quien se
+    // mueve más de una casilla solo puede ser un Explorador.
+    piece.hasMoved = true;
+    if (distancia > 1) piece.knownScout = true;
+
+    let battleInfo = null, mensaje = null;
+    const bajas = [];
+
     if (target && target.player !== piece.player) {
       const result = resolveBattle(piece.name, target.name);
       battleInfo = { attacker: piece, defender: target, result };
-      if (result === "attacker")      { nb[tr][tc] = {...piece, revealed:true}; nb[fr][fc] = null; }
-      else if (result === "defender") { nb[fr][fc] = null; nb[tr][tc] = {...target, revealed:true}; }
-      else                            { nb[fr][fc] = null; nb[tr][tc] = null; }
+      if (result === "attacker") {
+        nb[tr][tc] = {...piece, revealed:true}; nb[fr][fc] = null;
+        bajas.push(target);
+      } else if (result === "defender") {
+        nb[fr][fc] = null; nb[tr][tc] = {...target, revealed:true};
+        bajas.push(piece);
+      } else {
+        nb[fr][fc] = null; nb[tr][tc] = null;
+        bajas.push(piece, target);
+      }
       const desenlace = result === "attacker" ? `gana ${PIECES[piece.name].label}`
                       : result === "defender" ? `resiste ${PIECES[target.name].label}`
                       : "caen las dos";
-      addLog(`${PIECES[piece.name].label} ⚔ ${PIECES[target.name].label} · ${desenlace}`);
+      mensaje = `${PIECES[piece.name].label} ⚔ ${PIECES[target.name].label} · ${desenlace}`;
     } else {
       nb[tr][tc] = piece;
       nb[fr][fc] = null;
     }
-    return { nb, battleInfo };
+    return { nb, battleInfo, mensaje, bajas, distancia };
+  }
+
+  // Apunta en el cementerio las piezas caídas
+  function anotarBajas(caidas) {
+    if (!caidas.length) return;
+    setBajas(prev => ({
+      human: [...prev.human, ...caidas.filter(p => p.player === "human").map(p => p.name)],
+      ai:    [...prev.ai,    ...caidas.filter(p => p.player === "ai").map(p => p.name)],
+    }));
   }
 
   // Cuando hay combate no actualizamos el tablero de inmediato: primero se ve la
   // escena sobre la casilla atacada, y al terminar se aplica el resultado.
-  function escenificarCombate(nb, battleInfo, fr, fc, tr, tc, despues) {
+  function escenificarCombate(res, fr, fc, tr, tc, despues) {
+    const { nb, battleInfo, mensaje, bajas: caidas } = res;
     setCombat({ ...battleInfo, fr, fc, r: tr, c: tc, fase: "revelar" });
     programar(() => setCombat(k => (k ? { ...k, fase: "destruir" } : k)), COMBATE_REVELAR);
     programar(() => {
       setCombat(null);
       setBoard(nb);
+      if (mensaje) addLog(mensaje);
+      anotarBajas(caidas);
       const winner = checkWinner(nb);
       if (winner) { setGameOver(winner); return; }
       despues();
@@ -740,14 +855,18 @@ function GameBoard({ board: initBoard, onReset }) {
       setAiMoveAnim({ ...move });
 
       programar(() => {
-        const { nb, battleInfo } = applyMove(b, move.fr, move.fc, move.tr, move.tc);
+        const res = applyMove(b, move.fr, move.fc, move.tr, move.tc);
         setAiMoveAnim(null);
-        if (battleInfo) {
-          escenificarCombate(nb, battleInfo, move.fr, move.fc, move.tr, move.tc, () => setTurn("human"));
+        // Rastro de la jugada del rival: casillas marcadas y línea en el registro
+        setUltimoMov({ fr: move.fr, fc: move.fc, tr: move.tr, tc: move.tc });
+        addLog(`IA · ${coord(move.fr, move.fc)} → ${coord(move.tr, move.tc)}` +
+               (res.distancia > 1 ? ` · ${res.distancia} casillas` : ""));
+        if (res.battleInfo) {
+          escenificarCombate(res, move.fr, move.fc, move.tr, move.tc, () => setTurn("human"));
           return;
         }
-        setBoard(nb);
-        const winner = checkWinner(nb);
+        setBoard(res.nb);
+        const winner = checkWinner(res.nb);
         if (winner) { setGameOver(winner); return; }
         setTurn("human");
       }, 950);
@@ -760,16 +879,17 @@ function GameBoard({ board: initBoard, onReset }) {
     if (selCell) {
       const [sr, sc] = selCell;
       if (validMoves.some(([mr,mc]) => mr===r && mc===c)) {
-        const { nb, battleInfo } = applyMove(board, sr, sc, r, c);
+        const res = applyMove(board, sr, sc, r, c);
         setSelCell(null); setValidMoves([]);
-        if (battleInfo) {
-          escenificarCombate(nb, battleInfo, sr, sc, r, c, () => doAiTurn(nb));
+        setUltimoMov(null);          // al mover yo, se borra el rastro del rival
+        if (res.battleInfo) {
+          escenificarCombate(res, sr, sc, r, c, () => doAiTurn(res.nb));
           return;
         }
-        setBoard(nb);
-        const winner = checkWinner(nb);
+        setBoard(res.nb);
+        const winner = checkWinner(res.nb);
         if (winner) { setGameOver(winner); return; }
-        doAiTurn(nb);
+        doAiTurn(res.nb);
       } else if (piece?.player === "human") {
         setSelCell([r,c]);
         setValidMoves(getValidMoves(board, r, c));
@@ -860,6 +980,9 @@ function GameBoard({ board: initBoard, onReset }) {
                   const luchando   = combat && ((combat.r === r && combat.c === c) || (combat.fr === r && combat.fc === c));
                   const showPiece  = !luchando && (isHuman || (isAi && piece?.revealed));
                   const attackable = valid && piece?.player === "ai";
+                  // Rastro de la última jugada del rival
+                  const rastroDe = ultimoMov && ultimoMov.fr === r && ultimoMov.fc === c;
+                  const rastroA  = ultimoMov && ultimoMov.tr === r && ultimoMov.tc === c;
 
                   return (
                     <div key={`${r}-${c}`} onClick={() => clickCell(r, c)}
@@ -868,6 +991,8 @@ function GameBoard({ board: initBoard, onReset }) {
                         background: lake ? T.lake : squareBg(r, c),
                         boxShadow: sel2 ? `inset 0 0 0 3px ${T.select}`
                           : attackable ? `inset 0 0 0 3px ${T.capture}`
+                          : rastroA ? `inset 0 0 0 2px ${T.brass}AA`
+                          : rastroDe ? `inset 0 0 0 2px ${T.brass}55`
                           : lake ? "none"
                           : `inset 0 0 0 1px ${T.squareEdge}`,
                         position:"relative",
@@ -881,7 +1006,9 @@ function GameBoard({ board: initBoard, onReset }) {
                       )}
                       {lake && <Lake />}
                       {showPiece && <PieceTile name={piece.name} owner={isHuman ? "mine" : "theirs"} />}
-                      {isAi && !piece.revealed && !luchando && <HiddenTile />}
+                      {isAi && !piece.revealed && !luchando && (
+                        <HiddenTile movida={piece.hasMoved} explorador={piece.knownScout} />
+                      )}
                     </div>
                   );
                 })
@@ -912,6 +1039,8 @@ function GameBoard({ board: initBoard, onReset }) {
           </div>
         </div>
 
+        <Cementerio bajas={bajas} />
+
         <div style={{ padding:13, borderRadius:10, background:T.panelBg, border:`1px solid ${T.panelBorder}` }}>
           <PanelTitle>Piezas especiales</PanelTitle>
           {[
@@ -922,25 +1051,17 @@ function GameBoard({ board: initBoard, onReset }) {
             ["Flag", "Captúrala para ganar"],
           ].map(([name, tip]) => (
             <div key={name} style={{ display:"flex", gap:9, marginBottom:7, alignItems:"center" }}>
-              <span style={{
-                width:22, height:22, borderRadius:5, flexShrink:0,
-                background:T.mine.bg, border:`1px solid ${T.mine.border}`,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                position:"relative", overflow:"hidden",
-              }}>
-                <span style={{
-                  fontFamily:FONTS.rank, fontWeight:600, letterSpacing:0.3,
-                  fontSize: 14 * escalaNumeral(PIECES[name].display),
-                  color:T.mine.ink, marginBottom:1,
-                }}>{PIECES[name].display}</span>
-                <span style={{ position:"absolute", bottom:0, left:0, width:"100%", height:3, background:rankAccent(name) }}/>
-              </span>
+              <MiniFicha name={name} size={22} />
               <span style={{ color:T.textSoft, fontSize:11, lineHeight:1.25 }}>{tip}</span>
             </div>
           ))}
         </div>
 
-        <div style={{ padding:13, borderRadius:10, background:T.panelBg, border:`1px solid ${T.panelBorder}`, flex:1 }}>
+        <div style={{
+          padding:13, borderRadius:10, background:T.panelBg,
+          border:`1px solid ${T.panelBorder}`, flex:1,
+          maxHeight:190, overflowY:"auto",
+        }}>
           <PanelTitle>Registro</PanelTitle>
           {log.map((entry,i) => (
             <div key={i} style={{

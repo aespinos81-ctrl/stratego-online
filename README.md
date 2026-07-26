@@ -167,6 +167,16 @@ despliegue en el servidor y **regla de las dos casillas** (`MAX_SHUTTLE_MOVES`
 en `shared/rules.js`: una pieza no puede hacer el vaivén entre las mismas dos
 casillas más de 3 turnos seguidos).
 
+**Ayudas de deducción** (de momento solo en el cliente, versión offline):
+cementerio con las bajas de cada bando, marca de "esta pieza ya se ha movido"
+(luego no es bomba ni bandera), marca de Explorador confirmado al mover varias
+casillas de golpe, y rastro de la última jugada del rival.
+
+> ⚠️ Al conectar el multijugador, `viewFor()` tendrá que enviar `hasMoved` y
+> `knownScout` de las piezas enemigas ocultas. No es hacer trampa: son datos que
+> cualquiera puede deducir mirando el tablero. Si no se envían, el jugador online
+> perderá unas ayudas que sí tiene contra la IA.
+
 **Todavía pendientes:**
 - *More-squares rule*: la hermana mayor de la anterior, prohíbe repetir
   indefinidamente un patrón más largo. Es bastante más liosa de implementar.
