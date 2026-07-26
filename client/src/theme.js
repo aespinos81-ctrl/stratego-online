@@ -16,6 +16,9 @@
 export const FONTS = {
   ui: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   display: "'Cinzel', serif",
+  // Condensada para los números romanos de las fichas: es la que hace que
+  // "VIII" quepa y se lea. Aire de placa de identificación militar.
+  rank: "'Oswald', 'Arial Narrow', 'Helvetica Neue', sans-serif",
 };
 
 export const THEMES = {

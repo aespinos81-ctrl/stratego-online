@@ -2,23 +2,30 @@ import { useState, useEffect, useRef } from "react";
 import { theme as T, FONTS } from "./theme.js";
 
 // ─── CONSTANTES ───────────────────────────────────────────────────────────────
-// `display` es lo que se pinta en la ficha. Se usan cifras árabes (10, 9, 8…)
-// en vez de números romanos porque se leen mucho mejor de un vistazo; las tres
-// piezas especiales llevan símbolo propio.
+// `display` es lo que se pinta en la ficha: el rango en números romanos.
+// `insignia` es el distintivo que lo acompaña, al estilo de las divisas de un
+// ejército moderno: estrellas para la oficialidad superior, barras para los
+// oficiales y galones para la tropa. Dice lo mismo que el número, pero se
+// reconoce de un vistazo sin llegar a leerlo.
 const PIECES = {
-  Marshal:    { rank: 10, count: 1, display: "10", label: "Marshal"    },
-  General:    { rank: 9,  count: 1, display: "9",  label: "General"    },
-  Colonel:    { rank: 8,  count: 2, display: "8",  label: "Coronel"    },
-  Major:      { rank: 7,  count: 3, display: "7",  label: "Mayor"      },
-  Captain:    { rank: 6,  count: 4, display: "6",  label: "Capitán"    },
-  Lieutenant: { rank: 5,  count: 4, display: "5",  label: "Teniente"   },
-  Sergeant:   { rank: 4,  count: 4, display: "4",  label: "Sargento"   },
-  Miner:      { rank: 3,  count: 5, display: "3",  label: "Minero"     },
-  Scout:      { rank: 2,  count: 8, display: "2",  label: "Explorador" },
-  Spy:        { rank: 1,  count: 1, display: "S",  label: "Espía"      },
-  Bomb:       { rank: 11, count: 6, display: "✸",  label: "Bomba"      },
-  Flag:       { rank: 0,  count: 1, display: "⚑",  label: "Bandera"    },
+  Marshal:    { rank: 10, count: 1, display: "X",    label: "Marshal",    insignia: { tipo:"estrella", n:4 } },
+  General:    { rank: 9,  count: 1, display: "IX",   label: "General",    insignia: { tipo:"estrella", n:3 } },
+  Colonel:    { rank: 8,  count: 2, display: "VIII", label: "Coronel",    insignia: { tipo:"estrella", n:2 } },
+  Major:      { rank: 7,  count: 3, display: "VII",  label: "Mayor",      insignia: { tipo:"estrella", n:1 } },
+  Captain:    { rank: 6,  count: 4, display: "VI",   label: "Capitán",    insignia: { tipo:"barra",    n:3 } },
+  Lieutenant: { rank: 5,  count: 4, display: "V",    label: "Teniente",   insignia: { tipo:"barra",    n:2 } },
+  Sergeant:   { rank: 4,  count: 4, display: "IV",   label: "Sargento",   insignia: { tipo:"galon",    n:3 } },
+  Miner:      { rank: 3,  count: 5, display: "III",  label: "Minero",     insignia: { tipo:"galon",    n:2 } },
+  Scout:      { rank: 2,  count: 8, display: "II",   label: "Explorador", insignia: { tipo:"galon",    n:1 } },
+  Spy:        { rank: 1,  count: 1, display: "S",    label: "Espía",      insignia: null },
+  Bomb:       { rank: 11, count: 6, display: "✸",    label: "Bomba",      insignia: null },
+  Flag:       { rank: 0,  count: 1, display: "⚑",    label: "Bandera",    insignia: null },
 };
+
+// Un "VIII" ocupa cuatro veces más que una "X": ajustamos el cuerpo de letra
+// según lo largo que sea el número para que todos ocupen lo mismo en la ficha.
+const ESCALA_NUMERAL = { 1: 1, 2: 0.82, 3: 0.70, 4: 0.58 };
+const escalaNumeral = txt => ESCALA_NUMERAL[txt.length] ?? 0.54;
 
 const PIECE_NAMES = Object.keys(PIECES);
 const LAKES = [[4,2],[5,2],[4,3],[5,3],[4,6],[5,6],[4,7],[5,7]];
@@ -146,23 +153,53 @@ function checkWinner(board) {
 // ─── FICHA ────────────────────────────────────────────────────────────────────
 // `owner` es "mine" (hueso) o "theirs" (burdeos). La identidad se lee con la
 // cifra grande; la barra de color del pie ayuda a agrupar rangos de un vistazo.
+// El distintivo de rango: estrellas, barras o galones, como en una bocamanga
+function Insignia({ name, color, scale = 1 }) {
+  const spec = PIECES[name].insignia;
+  if (!spec) return null;
+  const { tipo, n } = spec;
+  return (
+    <div style={{
+      position:"absolute", top:3.5 * scale, left:0, width:"100%",
+      display:"flex", gap:2.5 * scale, alignItems:"flex-end", justifyContent:"center",
+      height:8 * scale,
+    }}>
+      {Array.from({ length: n }, (_, i) =>
+        tipo === "estrella" ? (
+          <span key={i} style={{ fontSize:7.5 * scale, lineHeight:1, color }}>★</span>
+        ) : tipo === "barra" ? (
+          <span key={i} style={{ width:6.5 * scale, height:2.5 * scale, background:color, borderRadius:1 }}/>
+        ) : (
+          <span key={i} style={{
+            width:0, height:0,
+            borderLeft:`${3.5 * scale}px solid transparent`,
+            borderRight:`${3.5 * scale}px solid transparent`,
+            borderBottom:`${4 * scale}px solid ${color}`,
+          }}/>
+        )
+      )}
+    </div>
+  );
+}
+
 function PieceTile({ name, owner = "mine", scale = 1, dim = false }) {
   const skin = owner === "mine" ? T.mine : T.theirs;
   const d = PIECES[name];
-  const size = (d.display.length > 1 ? 21 : 26) * scale;
   return (
     <div title={d.label} style={{
       width:"90%", height:"90%", borderRadius:7,
       background:skin.bg, border:`1px solid ${skin.border}`,
       boxShadow:skin.shadow,
-      display:"flex", alignItems:"center", justifyContent:"center",
+      display:"flex", flexDirection:"column",
+      alignItems:"center", justifyContent:"center",
       position:"relative", overflow:"hidden",
       opacity: dim ? 0.35 : 1,
     }}>
+      <Insignia name={name} color={skin.inkSoft} scale={scale} />
       <span style={{
-        fontFamily:FONTS.ui, fontSize:size, fontWeight:800,
-        color:skin.ink, lineHeight:1, letterSpacing:-0.5,
-        marginBottom:2,
+        fontFamily:FONTS.rank, fontSize:27 * scale * escalaNumeral(d.display),
+        fontWeight:700, color:skin.ink, lineHeight:0.95, letterSpacing:0.5,
+        marginTop: 5 * scale,   // deja sitio a la insignia de arriba
       }}>{d.display}</span>
       <div style={{
         position:"absolute", bottom:0, left:0, width:"100%", height:4,
@@ -370,8 +407,9 @@ function SetupPhase({ onReady }) {
                 position:"relative", overflow:"hidden",
               }}>
                 <span style={{
-                  fontSize: PIECES[name].display.length > 1 ? 11 : 13,
-                  fontWeight:800, color: done ? T.textDim : T.mine.ink, marginBottom:1,
+                  fontFamily:FONTS.rank, fontWeight:600, letterSpacing:0.3,
+                  fontSize: 15 * escalaNumeral(PIECES[name].display),
+                  color: done ? T.textDim : T.mine.ink, marginBottom:1,
                 }}>{PIECES[name].display}</span>
                 <span style={{
                   position:"absolute", bottom:0, left:0, width:"100%", height:3,
@@ -507,13 +545,13 @@ function Combatiente({ piece, cae, gana }) {
   // desaparecer. Con `both` bastaba un reinicio para dejarla en opacidad cero.
   return (
     <div style={{
-      width:50, height:50, position:"relative",
+      width:56, height:56, position:"relative",
       display:"flex", alignItems:"center", justifyContent:"center",
       animation: cae ? `romper ${COMBATE_DESTRUIR}ms ease-in forwards`
                : gana ? "vencer 400ms ease-out"
                : "entrarChoque 260ms cubic-bezier(0.34,1.56,0.64,1)",
     }}>
-      <PieceTile name={piece.name} owner={piece.player === "human" ? "mine" : "theirs"} scale={1.25} />
+      <PieceTile name={piece.name} owner={piece.player === "human" ? "mine" : "theirs"} scale={1.12} />
       {/* chispas de la ruptura */}
       {cae && [0,1,2,3,4,5].map(i => (
         <span key={i} style={{
@@ -890,9 +928,11 @@ function GameBoard({ board: initBoard, onReset }) {
                 display:"flex", alignItems:"center", justifyContent:"center",
                 position:"relative", overflow:"hidden",
               }}>
-                <span style={{ fontSize:12, fontWeight:800, color:T.mine.ink, marginBottom:1 }}>
-                  {PIECES[name].display}
-                </span>
+                <span style={{
+                  fontFamily:FONTS.rank, fontWeight:600, letterSpacing:0.3,
+                  fontSize: 14 * escalaNumeral(PIECES[name].display),
+                  color:T.mine.ink, marginBottom:1,
+                }}>{PIECES[name].display}</span>
                 <span style={{ position:"absolute", bottom:0, left:0, width:"100%", height:3, background:rankAccent(name) }}/>
               </span>
               <span style={{ color:T.textSoft, fontSize:11, lineHeight:1.25 }}>{tip}</span>
@@ -941,7 +981,7 @@ export default function Stratego() {
       paddingTop:24, paddingBottom:44, fontFamily:FONTS.ui,
     }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Oswald:wght@500;600;700&display=swap');
         * { box-sizing: border-box; }
         @keyframes fadeIn   { from{opacity:0} to{opacity:1} }
         @keyframes popIn    { from{transform:scale(0.5);opacity:0} to{transform:scale(1);opacity:1} }
