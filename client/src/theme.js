@@ -11,6 +11,13 @@
 //   2) cámbiale la clave, el `label` y los colores,
 //   3) ya aparece disponible en THEMES.
 
+// Tipografías. No dependen del tema: la interfaz usa una sans limpia (como
+// chess.com) y la serif elegante se reserva para el título.
+export const FONTS = {
+  ui: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+  display: "'Cinzel', serif",
+};
+
 export const THEMES = {
   madera: {
     label: "Mesa de madera",
@@ -78,6 +85,7 @@ export const THEMES = {
     select: "#F2C14E",                       // pieza seleccionada
     moveDot: "rgba(25, 15, 5, 0.42)",        // casilla libre a la que puedes ir
     capture: "#E8543F",                      // casilla que puedes atacar
+    dropTarget: "rgba(242, 193, 78, 0.45)",  // casilla bajo la pieza que arrastras
     aiFrom: "#E8543F",                       // de dónde salió la IA
     aiTo: "#F2C14E",                         // a dónde llegó
 

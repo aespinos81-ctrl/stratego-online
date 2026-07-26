@@ -1,27 +1,33 @@
 import { useState, useEffect, useRef } from "react";
-import { theme as T } from "./theme.js";
+import { theme as T, FONTS } from "./theme.js";
 
-// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+// ─── CONSTANTES ───────────────────────────────────────────────────────────────
+// `display` es lo que se pinta en la ficha. Se usan cifras árabes (10, 9, 8…)
+// en vez de números romanos porque se leen mucho mejor de un vistazo; las tres
+// piezas especiales llevan símbolo propio.
 const PIECES = {
-  Marshal:    { rank: 10, count: 1,  symbol: "Ⅹ",  label: "Marshal"    },
-  General:    { rank: 9,  count: 1,  symbol: "Ⅸ",  label: "General"    },
-  Colonel:    { rank: 8,  count: 2,  symbol: "Ⅷ",  label: "Coronel"    },
-  Major:      { rank: 7,  count: 3,  symbol: "Ⅶ",  label: "Mayor"      },
-  Captain:    { rank: 6,  count: 4,  symbol: "Ⅵ",  label: "Capitán"    },
-  Lieutenant: { rank: 5,  count: 4,  symbol: "Ⅴ",  label: "Teniente"   },
-  Sergeant:   { rank: 4,  count: 4,  symbol: "Ⅳ",  label: "Sargento"   },
-  Miner:      { rank: 3,  count: 5,  symbol: "Ⅲ",  label: "Minero"     },
-  Scout:      { rank: 2,  count: 8,  symbol: "Ⅱ",  label: "Explorador" },
-  Spy:        { rank: 1,  count: 1,  symbol: "S",   label: "Espía"      },
-  Bomb:       { rank: 11, count: 6,  symbol: "✸",  label: "Bomba"      },
-  Flag:       { rank: 0,  count: 1,  symbol: "⚑",  label: "Bandera"    },
+  Marshal:    { rank: 10, count: 1, display: "10", label: "Marshal"    },
+  General:    { rank: 9,  count: 1, display: "9",  label: "General"    },
+  Colonel:    { rank: 8,  count: 2, display: "8",  label: "Coronel"    },
+  Major:      { rank: 7,  count: 3, display: "7",  label: "Mayor"      },
+  Captain:    { rank: 6,  count: 4, display: "6",  label: "Capitán"    },
+  Lieutenant: { rank: 5,  count: 4, display: "5",  label: "Teniente"   },
+  Sergeant:   { rank: 4,  count: 4, display: "4",  label: "Sargento"   },
+  Miner:      { rank: 3,  count: 5, display: "3",  label: "Minero"     },
+  Scout:      { rank: 2,  count: 8, display: "2",  label: "Explorador" },
+  Spy:        { rank: 1,  count: 1, display: "S",  label: "Espía"      },
+  Bomb:       { rank: 11, count: 6, display: "✸",  label: "Bomba"      },
+  Flag:       { rank: 0,  count: 1, display: "⚑",  label: "Bandera"    },
 };
 
 const PIECE_NAMES = Object.keys(PIECES);
 const LAKES = [[4,2],[5,2],[4,3],[5,3],[4,6],[5,6],[4,7],[5,7]];
 const isLake = (r, c) => LAKES.some(([lr, lc]) => lr === r && lc === c);
-const CELL = 54;
+const CELL = 58;
 const GAP = 2;
+
+// Mi zona de despliegue son las cuatro filas de abajo
+const enMiZona = (r, c) => r >= 6 && !isLake(r, c);
 
 // Color de la barrita de rango que lleva cada ficha al pie
 function rankAccent(name) {
@@ -40,7 +46,7 @@ function rankAccent(name) {
 // Las casillas alternan dos verdes, como el tapete de un tablero de verdad
 const squareBg = (r, c) => ((r + c) % 2 === 0 ? T.squareLight : T.squareDark);
 
-// ─── GAME LOGIC ───────────────────────────────────────────────────────────────
+// ─── LÓGICA DEL JUEGO ─────────────────────────────────────────────────────────
 function createPool() {
   const pool = [];
   for (const [name, d] of Object.entries(PIECES))
@@ -138,31 +144,28 @@ function checkWinner(board) {
 }
 
 // ─── FICHA ────────────────────────────────────────────────────────────────────
-// Una pieza dibujada. `owner` es "mine" (hueso) o "theirs" (burdeos). El rango se
-// distingue por el número romano y por la barra de color del pie.
-function PieceTile({ name, owner = "mine", scale = 1 }) {
+// `owner` es "mine" (hueso) o "theirs" (burdeos). La identidad se lee con la
+// cifra grande; la barra de color del pie ayuda a agrupar rangos de un vistazo.
+function PieceTile({ name, owner = "mine", scale = 1, dim = false }) {
   const skin = owner === "mine" ? T.mine : T.theirs;
+  const d = PIECES[name];
+  const size = (d.display.length > 1 ? 21 : 26) * scale;
   return (
-    <div style={{
-      width:"88%", height:"88%", borderRadius:6,
+    <div title={d.label} style={{
+      width:"90%", height:"90%", borderRadius:7,
       background:skin.bg, border:`1px solid ${skin.border}`,
       boxShadow:skin.shadow,
-      display:"flex", flexDirection:"column",
-      alignItems:"center", justifyContent:"center",
+      display:"flex", alignItems:"center", justifyContent:"center",
       position:"relative", overflow:"hidden",
+      opacity: dim ? 0.35 : 1,
     }}>
-      <div style={{ fontSize:20*scale, color:skin.ink, lineHeight:1, fontWeight:700 }}>
-        {PIECES[name].symbol}
-      </div>
+      <span style={{
+        fontFamily:FONTS.ui, fontSize:size, fontWeight:800,
+        color:skin.ink, lineHeight:1, letterSpacing:-0.5,
+        marginBottom:2,
+      }}>{d.display}</span>
       <div style={{
-        fontSize:7.5*scale, color:skin.inkSoft, marginTop:1,
-        fontFamily:"'Cinzel',serif", letterSpacing:0.2,
-      }}>
-        {PIECES[name].label.slice(0,6)}
-      </div>
-      <div style={{
-        position:"absolute", bottom:0, left:"15%",
-        width:"70%", height:3, borderRadius:"2px 2px 0 0",
+        position:"absolute", bottom:0, left:0, width:"100%", height:4,
         background:rankAccent(name),
       }}/>
     </div>
@@ -173,7 +176,7 @@ function PieceTile({ name, owner = "mine", scale = 1 }) {
 function HiddenTile() {
   return (
     <div style={{
-      width:"88%", height:"88%", borderRadius:6,
+      width:"90%", height:"90%", borderRadius:7,
       background:T.hidden.bg, border:`1px solid ${T.hidden.border}`,
       boxShadow:"0 2px 4px rgba(0,0,0,0.4)",
       display:"flex", alignItems:"center", justifyContent:"center",
@@ -183,17 +186,29 @@ function HiddenTile() {
         position:"absolute", inset:0,
         background:`repeating-linear-gradient(45deg, ${T.hidden.pattern} 0px, ${T.hidden.pattern} 3px, transparent 3px, transparent 8px)`,
       }}/>
-      <span style={{ fontSize:17, color:T.hidden.emblem, position:"relative" }}>✦</span>
+      <span style={{ fontSize:18, color:T.hidden.emblem, position:"relative" }}>✦</span>
     </div>
   );
 }
 
-const Lake = () => <span style={{ fontSize:18, color:T.lakeWave }}>〰</span>;
+const Lake = () => <span style={{ fontSize:20, color:T.lakeWave }}>〰</span>;
 
-// ─── SETUP PHASE ──────────────────────────────────────────────────────────────
+// Encabezado de panel lateral
+const PanelTitle = ({ children }) => (
+  <div style={{
+    fontSize:10, color:T.textSoft, fontFamily:FONTS.ui,
+    letterSpacing:1.6, marginBottom:9, fontWeight:700, textTransform:"uppercase",
+  }}>{children}</div>
+);
+
+// ─── FASE DE DESPLIEGUE ───────────────────────────────────────────────────────
 function SetupPhase({ onReady }) {
   const [placed, setPlaced] = useState(Array.from({length:10}, () => Array(10).fill(null)));
+  // Qué tenemos "en la mano": una pieza de la bandeja, o una ya puesta en el
+  // tablero que queremos recolocar.
+  //   { kind:"tray",  name }      · { kind:"board", r, c }
   const [sel, setSel] = useState(null);
+  const [dragOver, setDragOver] = useState(null);
 
   const usedCounts = {};
   for (let r = 6; r < 10; r++)
@@ -202,24 +217,81 @@ function SetupPhase({ onReady }) {
 
   const remaining = {};
   for (const n of PIECE_NAMES) remaining[n] = PIECES[n].count - (usedCounts[n] || 0);
-  const allPlaced = PIECE_NAMES.every(n => remaining[n] === 0);
+  const faltan = PIECE_NAMES.reduce((s, n) => s + remaining[n], 0);
+  const allPlaced = faltan === 0;
 
-  function clickCell(r, c) {
-    if (r < 6 || isLake(r, c)) return;
-    const nb = placed.map(row => [...row]);
-    if (sel) {
-      if (remaining[sel] > 0) { nb[r][c] = sel; setPlaced(nb); }
-      else if (placed[r][c] === sel) { nb[r][c] = null; setPlaced(nb); }
-    } else {
-      if (placed[r][c]) setSel(placed[r][c]);
-    }
+  const copia = () => placed.map(row => [...row]);
+
+  // ── Las tres operaciones sobre el tablero ────────────────────────────────
+  function colocar(r, c, name) {
+    const nb = copia();
+    nb[r][c] = name;           // si había otra pieza, vuelve sola a la bandeja
+    setPlaced(nb);
   }
 
-  function removeCell(e, r, c) {
+  // Mover una pieza ya colocada. Si el destino está ocupado, se INTERCAMBIAN:
+  // es lo más cómodo para ajustar una formación sin ir vaciando casillas.
+  function moverOIntercambiar(fr, fc, tr, tc) {
+    const nb = copia();
+    const origen = nb[fr][fc];
+    nb[fr][fc] = nb[tr][tc];
+    nb[tr][tc] = origen;
+    setPlaced(nb);
+  }
+
+  function quitar(r, c) {
+    const nb = copia();
+    nb[r][c] = null;
+    setPlaced(nb);
+  }
+
+  // ── Interacción: clic ────────────────────────────────────────────────────
+  function clickBandeja(name) {
+    if (remaining[name] === 0) return;
+    setSel(prev => (prev?.kind === "tray" && prev.name === name ? null : { kind:"tray", name }));
+  }
+
+  function clickCell(r, c) {
+    if (!enMiZona(r, c)) { setSel(null); return; }
+
+    // Traigo una pieza de la bandeja
+    if (sel?.kind === "tray") {
+      if (remaining[sel.name] > 0) {
+        colocar(r, c, sel.name);
+        if (remaining[sel.name] === 1) setSel(null);   // era la última
+      }
+      return;
+    }
+
+    // Tengo cogida una pieza del tablero
+    if (sel?.kind === "board") {
+      if (sel.r === r && sel.c === c) { setSel(null); return; }  // la suelto donde estaba
+      moverOIntercambiar(sel.r, sel.c, r, c);
+      setSel(null);
+      return;
+    }
+
+    // Sin nada en la mano: cojo la pieza que haya en esta casilla
+    if (placed[r][c]) setSel({ kind:"board", r, c });
+  }
+
+  function clickDerecho(e, r, c) {
     e.preventDefault();
-    if (r < 6 || isLake(r, c)) return;
-    const nb = placed.map(row => [...row]);
-    nb[r][c] = null; setPlaced(nb);
+    if (!enMiZona(r, c)) return;
+    if (placed[r][c]) { quitar(r, c); setSel(null); }
+  }
+
+  // ── Interacción: arrastrar y soltar ──────────────────────────────────────
+  function soltarEn(r, c) {
+    setDragOver(null);
+    if (!enMiZona(r, c) || !sel) return;
+    if (sel.kind === "tray") {
+      if (remaining[sel.name] > 0) colocar(r, c, sel.name);
+      setSel(null);
+    } else {
+      if (sel.r !== r || sel.c !== c) moverOIntercambiar(sel.r, sel.c, r, c);
+      setSel(null);
+    }
   }
 
   function autoArrange() {
@@ -230,6 +302,12 @@ function SetupPhase({ onReady }) {
       for (let c = 0; c < 10; c++)
         if (!isLake(r, c) && i < pool.length) nb[r][c] = pool[i++];
     setPlaced(nb);
+    setSel(null);
+  }
+
+  function vaciar() {
+    setPlaced(Array.from({length:10}, () => Array(10).fill(null)));
+    setSel(null);
   }
 
   function startGame() {
@@ -243,38 +321,65 @@ function SetupPhase({ onReady }) {
     onReady(aiBoard);
   }
 
+  const cogida = (r, c) => sel?.kind === "board" && sel.r === r && sel.c === c;
+
   return (
-    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:18 }}>
-      <p style={{ color:T.brass, fontFamily:"'Cinzel',serif", fontSize:13, letterSpacing:3, margin:0 }}>
-        FASE DE DESPLIEGUE — Coloca tus 40 piezas en las filas inferiores
-      </p>
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:16, fontFamily:FONTS.ui }}>
+      <div style={{ textAlign:"center" }}>
+        <div style={{ color:T.brass, fontSize:14, fontWeight:700, letterSpacing:0.3 }}>
+          Coloca tus 40 piezas en las cuatro filas de abajo
+        </div>
+        <div style={{ color:T.textSoft, fontSize:12, marginTop:4 }}>
+          Arrastra las fichas, o pulsa una y luego la casilla. Sobre el tablero puedes
+          moverlas e intercambiarlas; con el botón derecho las devuelves a la bandeja.
+        </div>
+      </div>
 
       {/* Bandeja de piezas */}
       <div style={{
-        display:"flex", flexWrap:"wrap", gap:6, justifyContent:"center",
-        maxWidth:680, padding:"11px 14px",
+        display:"flex", flexWrap:"wrap", gap:7, justifyContent:"center",
+        maxWidth:700, padding:"12px 14px",
         background:T.panelBg, borderRadius:12,
         border:`1px solid ${T.panelBorder}`,
       }}>
         {PIECE_NAMES.map(name => {
-          const active = sel === name;
+          const active = sel?.kind === "tray" && sel.name === name;
           const done = remaining[name] === 0;
           return (
-            <button key={name} onClick={() => setSel(active ? null : name)} disabled={done}
+            <button key={name}
+              onClick={() => clickBandeja(name)}
+              disabled={done}
+              draggable={!done}
+              onDragStart={() => setSel({ kind:"tray", name })}
+              onDragEnd={() => setDragOver(null)}
               style={{
-                display:"flex", alignItems:"center", gap:6,
-                padding:"5px 10px", borderRadius:8,
-                cursor: done ? "not-allowed" : "pointer",
-                background: active ? T.mine.bg : done ? "rgba(0,0,0,0.25)" : "rgba(247,238,221,0.08)",
+                display:"flex", alignItems:"center", gap:8,
+                padding:"6px 11px 6px 7px", borderRadius:9,
+                cursor: done ? "not-allowed" : "grab",
+                background: active ? T.brassFaint : "rgba(247,238,221,0.06)",
                 border: active ? `2px solid ${T.brassBright}` : `1px solid ${T.panelBorder}`,
-                color: active ? T.mine.ink : done ? T.textDim : T.text,
-                fontFamily:"'Cinzel',serif", fontSize:11,
-                opacity: done ? 0.45 : 1, transition:"all 0.12s",
+                color: done ? T.textDim : T.text,
+                fontFamily:FONTS.ui, fontSize:12,
+                opacity: done ? 0.4 : 1, transition:"all 0.12s",
               }}>
-              <span style={{ color: done ? T.textDim : rankAccent(name), fontSize:13, fontWeight:700 }}>
-                {PIECES[name].symbol}
+              <span style={{
+                width:24, height:24, borderRadius:5, flexShrink:0,
+                background: done ? "transparent" : T.mine.bg,
+                border: `1px solid ${done ? T.textDim : T.mine.border}`,
+                display:"flex", alignItems:"center", justifyContent:"center",
+                position:"relative", overflow:"hidden",
+              }}>
+                <span style={{
+                  fontSize: PIECES[name].display.length > 1 ? 11 : 13,
+                  fontWeight:800, color: done ? T.textDim : T.mine.ink, marginBottom:1,
+                }}>{PIECES[name].display}</span>
+                <span style={{
+                  position:"absolute", bottom:0, left:0, width:"100%", height:3,
+                  background: done ? T.textDim : rankAccent(name),
+                }}/>
               </span>
-              {PIECES[name].label} <b>×{remaining[name]}</b>
+              <span>{PIECES[name].label}</span>
+              <b style={{ color: done ? T.textDim : T.brass }}>×{remaining[name]}</b>
             </button>
           );
         })}
@@ -291,39 +396,61 @@ function SetupPhase({ onReady }) {
             Array.from({length:10}, (__, c) => {
               const lake = isLake(r, c);
               const p = placed[r][c];
-              const zone = r >= 6;
-              const canPlace = zone && !lake && sel && remaining[sel] > 0;
+              const mia = enMiZona(r, c);
+              const enemiga = r < 4;
+              const puedoSoltar = mia && sel;
+              const encima = dragOver && dragOver[0] === r && dragOver[1] === c;
+
               return (
                 <div key={`${r}-${c}`}
                   onClick={() => clickCell(r, c)}
-                  onContextMenu={e => removeCell(e, r, c)}
+                  onContextMenu={e => clickDerecho(e, r, c)}
+                  onDragOver={e => { if (mia) { e.preventDefault(); setDragOver([r, c]); } }}
+                  onDragLeave={() => setDragOver(prev => (prev && prev[0] === r && prev[1] === c ? null : prev))}
+                  onDrop={e => { e.preventDefault(); soltarEn(r, c); }}
                   style={{
                     width:CELL, height:CELL, borderRadius:4,
                     background: lake ? T.lake : squareBg(r, c),
-                    boxShadow: lake ? "none" : `inset 0 0 0 1px ${T.squareEdge}`,
+                    boxShadow: cogida(r, c) ? `inset 0 0 0 3px ${T.select}`
+                      : encima ? `inset 0 0 0 3px ${T.dropTarget}`
+                      : lake ? "none"
+                      : `inset 0 0 0 1px ${T.squareEdge}`,
                     position:"relative",
-                    cursor: zone && !lake ? "pointer" : "default",
+                    cursor: mia ? (p ? "grab" : sel ? "pointer" : "default") : "default",
                     display:"flex", alignItems:"center", justifyContent:"center",
                     userSelect:"none",
                   }}>
-                  {!lake && (
+                  {/* tinte: mi zona y la zona enemiga */}
+                  {!lake && (mia || enemiga) && (
                     <div style={{
                       position:"absolute", inset:0, borderRadius:4,
-                      background: zone ? T.zoneMine : T.zoneTheirs,
+                      background: mia ? T.zoneMine : T.zoneTheirs,
                     }}/>
                   )}
-                  {canPlace && !p && (
+                  {/* hueco libre esperando pieza */}
+                  {puedoSoltar && !p && !encima && (
                     <div style={{
-                      position:"absolute", inset:3, borderRadius:4,
+                      position:"absolute", inset:4, borderRadius:4,
                       border:`1px dashed ${T.brassSoft}`,
                     }}/>
                   )}
                   {lake && <Lake />}
-                  {p && <PieceTile name={p} owner="mine" />}
-                  {!zone && !lake && (
+                  {p && (
+                    <div
+                      draggable
+                      onDragStart={() => setSel({ kind:"board", r, c })}
+                      onDragEnd={() => setDragOver(null)}
+                      style={{
+                        width:"100%", height:"100%",
+                        display:"flex", alignItems:"center", justifyContent:"center",
+                      }}>
+                      <PieceTile name={p} owner="mine" dim={cogida(r, c)} />
+                    </div>
+                  )}
+                  {enemiga && !lake && (
                     <span style={{
-                      position:"relative", fontSize:9, letterSpacing:1,
-                      color:"rgba(255,255,255,0.3)", fontFamily:"'Cinzel',serif",
+                      position:"relative", fontSize:10, letterSpacing:1,
+                      color:"rgba(255,255,255,0.28)", fontWeight:600,
                     }}>IA</span>
                   )}
                 </div>
@@ -333,89 +460,92 @@ function SetupPhase({ onReady }) {
         </div>
       </div>
 
-      <div style={{ display:"flex", gap:12 }}>
-        <button onClick={autoArrange} style={{
-          padding:"10px 22px", background:"rgba(247,238,221,0.08)",
-          border:`1px solid ${T.brassSoft}`, borderRadius:9,
-          color:T.brass, fontFamily:"'Cinzel',serif", fontSize:12,
-          cursor:"pointer", letterSpacing:1,
-        }}>Despliegue Automático</button>
+      <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+        <button onClick={autoArrange} style={botonSecundario}>Despliegue automático</button>
+        <button onClick={vaciar} disabled={faltan === 40} style={{
+          ...botonSecundario,
+          opacity: faltan === 40 ? 0.4 : 1,
+          cursor: faltan === 40 ? "not-allowed" : "pointer",
+        }}>Vaciar</button>
         <button onClick={startGame} disabled={!allPlaced} style={{
-          padding:"10px 26px",
+          padding:"11px 28px",
           background: allPlaced ? `linear-gradient(160deg, ${T.brassBright}, ${T.brass})` : "rgba(0,0,0,0.25)",
           border:"none", borderRadius:9,
           color: allPlaced ? "#3B2A18" : T.textDim,
-          fontFamily:"'Cinzel',serif", fontSize:12, fontWeight:700,
-          cursor: allPlaced ? "pointer" : "not-allowed", letterSpacing:1,
+          fontFamily:FONTS.ui, fontSize:13, fontWeight:700,
+          cursor: allPlaced ? "pointer" : "not-allowed", letterSpacing:0.3,
           boxShadow: allPlaced ? `0 4px 14px ${T.brassSoft}` : "none",
-        }}>¡Comenzar Batalla!</button>
+        }}>¡Comenzar batalla!</button>
       </div>
       {!allPlaced && (
-        <p style={{ color:T.textSoft, fontSize:11, fontFamily:"'Cinzel',serif", margin:0 }}>
-          Faltan {PIECE_NAMES.reduce((s,n) => s + remaining[n], 0)} piezas por colocar
+        <p style={{ color:T.textSoft, fontSize:12, margin:0 }}>
+          Faltan {faltan} piezas por colocar
         </p>
       )}
     </div>
   );
 }
 
-// ─── BATTLE POPUP ─────────────────────────────────────────────────────────────
+const botonSecundario = {
+  padding:"11px 20px", background:"rgba(247,238,221,0.07)",
+  border:`1px solid ${T.brassSoft}`, borderRadius:9,
+  color:T.brass, fontFamily:FONTS.ui, fontSize:13,
+  cursor:"pointer", letterSpacing:0.3,
+};
+
+// ─── POPUP DE COMBATE ─────────────────────────────────────────────────────────
 function BattlePopup({ battle, onDone }) {
   useEffect(() => { const t = setTimeout(onDone, 2400); return () => clearTimeout(t); }, [onDone]);
   if (!battle) return null;
   const { attacker, defender, result } = battle;
-  const txt = result === "attacker" ? "¡ATACANTE GANA!" : result === "defender" ? "¡DEFENSOR GANA!" : "¡EMPATE!";
+  const txt = result === "attacker" ? "¡Gana el atacante!" : result === "defender" ? "¡Gana el defensor!" : "¡Empate!";
   const col = result === "attacker" ? T.youText : result === "defender" ? T.themText : T.brassBright;
   return (
     <div style={{
       position:"fixed", inset:0, zIndex:200,
       display:"flex", alignItems:"center", justifyContent:"center",
       background:"rgba(30,15,5,0.78)", backdropFilter:"blur(6px)",
-      animation:"fadeIn 0.2s ease",
+      animation:"fadeIn 0.2s ease", fontFamily:FONTS.ui,
     }}>
       <div style={{
         background:T.frameBg,
         border:`2px solid ${T.brassSoft}`, borderRadius:18,
-        padding:"30px 48px", textAlign:"center",
+        padding:"28px 46px", textAlign:"center",
         boxShadow:"0 20px 60px rgba(0,0,0,0.55)",
         animation:"popIn 0.3s cubic-bezier(0.34,1.56,0.64,1)",
       }}>
-        <div style={{ fontFamily:"'Cinzel',serif", color:T.brass, fontSize:11, letterSpacing:5, marginBottom:18 }}>
+        <div style={{ color:T.brass, fontSize:11, letterSpacing:2.5, marginBottom:20, fontWeight:700 }}>
           ⚔ COMBATE ⚔
         </div>
-        <div style={{ display:"flex", gap:36, alignItems:"center", marginBottom:22 }}>
-          {[{p:attacker,label:"ATACANTE"}, null, {p:defender,label:"DEFENSOR"}].map((item,i) =>
+        <div style={{ display:"flex", gap:32, alignItems:"center", marginBottom:20 }}>
+          {[{p:attacker,label:"Atacante"}, null, {p:defender,label:"Defensor"}].map((item,i) =>
             item === null ? (
-              <div key={i} style={{ fontSize:20, color:T.brass, fontFamily:"'Cinzel',serif" }}>VS</div>
+              <div key={i} style={{ fontSize:15, color:T.brass, fontWeight:700 }}>VS</div>
             ) : (
               <div key={i} style={{ textAlign:"center" }}>
-                <div style={{ width:66, height:66, margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"center" }}>
-                  <PieceTile name={item.p.name} owner={item.p.player==="human" ? "mine" : "theirs"} scale={1.6} />
+                <div style={{ width:70, height:70, margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                  <PieceTile name={item.p.name} owner={item.p.player==="human" ? "mine" : "theirs"} scale={1.7} />
                 </div>
-                <div style={{ color:T.text, fontSize:11, fontFamily:"'Cinzel',serif", marginTop:6 }}>
+                <div style={{ color:T.text, fontSize:13, marginTop:8, fontWeight:600 }}>
                   {PIECES[item.p.name].label}
                 </div>
                 <div style={{
-                  fontSize:9, marginTop:3, letterSpacing:2, fontFamily:"'Cinzel',serif",
+                  fontSize:11, marginTop:2,
                   color: item.p.player==="human" ? T.youText : T.themText,
                 }}>
-                  {item.p.player==="human" ? "TÚ" : "IA"}
+                  {item.p.player==="human" ? "Tú" : "IA"} · {item.label}
                 </div>
-                <div style={{ fontSize:9, color:T.textDim, marginTop:2 }}>{item.label}</div>
               </div>
             )
           )}
         </div>
-        <div style={{
-          fontFamily:"'Cinzel',serif", fontSize:17, fontWeight:700,
-          color:col, letterSpacing:3, textShadow:`0 0 20px ${col}66`,
-        }}>{txt}</div>
+        <div style={{ fontSize:17, fontWeight:700, color:col }}>{txt}</div>
       </div>
     </div>
   );
 }
 
-// ─── AI MOVE ARROW OVERLAY ────────────────────────────────────────────────────
+// ─── FLECHA DEL MOVIMIENTO DE LA IA ───────────────────────────────────────────
 function AiMoveArrow({ aiMoveAnim }) {
   if (!aiMoveAnim) return null;
   const { fr, fc, tr, tc } = aiMoveAnim;
@@ -473,7 +603,7 @@ function AiMoveArrow({ aiMoveAnim }) {
   );
 }
 
-// ─── GAME BOARD ───────────────────────────────────────────────────────────────
+// ─── TABLERO DE JUEGO ─────────────────────────────────────────────────────────
 function GameBoard({ board: initBoard, onReset }) {
   const [board, setBoard]         = useState(initBoard);
   const [selCell, setSelCell]     = useState(null);
@@ -578,7 +708,7 @@ function GameBoard({ board: initBoard, onReset }) {
   const isValid = (r,c) => validMoves.some(([mr,mc]) => mr===r && mc===c);
 
   return (
-    <div style={{ display:"flex", gap:22, alignItems:"flex-start" }}>
+    <div style={{ display:"flex", gap:20, alignItems:"flex-start", fontFamily:FONTS.ui }}>
       {battle && <BattlePopup battle={battle} onDone={handleBattleDone} />}
 
       {gameOver && (
@@ -588,28 +718,28 @@ function GameBoard({ board: initBoard, onReset }) {
           background:"rgba(30,15,5,0.86)", backdropFilter:"blur(8px)",
         }}>
           <div style={{
-            textAlign:"center", fontFamily:"'Cinzel',serif",
+            textAlign:"center",
             background:T.frameBg,
-            border:`2px solid ${T.brassSoft}`, borderRadius:20, padding:"48px 64px",
+            border:`2px solid ${T.brassSoft}`, borderRadius:20, padding:"44px 60px",
             boxShadow:"0 24px 70px rgba(0,0,0,0.6)",
           }}>
-            <div style={{ fontSize:60, marginBottom:14 }}>{gameOver==="human" ? "🏆" : "💀"}</div>
+            <div style={{ fontSize:56, marginBottom:12 }}>{gameOver==="human" ? "🏆" : "💀"}</div>
             <div style={{
-              fontSize:30, letterSpacing:4, marginBottom:8,
+              fontSize:28, fontWeight:800, letterSpacing:0.5, marginBottom:8,
               color: gameOver==="human" ? T.win : T.lose,
             }}>
-              {gameOver==="human" ? "¡VICTORIA!" : "DERROTA"}
+              {gameOver==="human" ? "¡Victoria!" : "Derrota"}
             </div>
-            <div style={{ color:T.textSoft, fontSize:13, marginBottom:30 }}>
+            <div style={{ color:T.textSoft, fontSize:14, marginBottom:28 }}>
               {gameOver==="human" ? "Has capturado la bandera enemiga" : "Tu bandera ha caído"}
             </div>
             <button onClick={onReset} style={{
-              padding:"11px 30px",
+              padding:"12px 30px",
               background:`linear-gradient(160deg, ${T.brassBright}, ${T.brass})`,
               border:"none", borderRadius:10,
-              color:"#3B2A18", fontFamily:"'Cinzel',serif", fontSize:14, fontWeight:700,
-              cursor:"pointer", letterSpacing:2,
-            }}>NUEVA PARTIDA</button>
+              color:"#3B2A18", fontFamily:FONTS.ui, fontSize:14, fontWeight:700,
+              cursor:"pointer",
+            }}>Nueva partida</button>
           </div>
         </div>
       )}
@@ -619,14 +749,14 @@ function GameBoard({ board: initBoard, onReset }) {
         <div style={{ height:34, display:"flex", alignItems:"center", justifyContent:"center", width:"100%", marginBottom:4 }}>
           {(aiThinking || aiMoveAnim) && (
             <div style={{
-              padding:"5px 20px", borderRadius:20,
+              padding:"6px 18px", borderRadius:20,
               background:T.themBg,
               border:`1px solid ${T.themBorder}`,
-              color:T.text, fontFamily:"'Cinzel',serif", fontSize:11, letterSpacing:2,
+              color:T.text, fontSize:12, fontWeight:600,
               boxShadow:"0 4px 14px rgba(0,0,0,0.35)",
               animation:"pulseRed 0.55s ease infinite alternate",
             }}>
-              {aiThinking ? "🤖 La IA está pensando…" : "🤖 La IA se mueve →"}
+              {aiThinking ? "La IA está pensando…" : "La IA se mueve"}
             </div>
           )}
         </div>
@@ -665,7 +795,7 @@ function GameBoard({ board: initBoard, onReset }) {
                       }}>
 
                       {valid && !piece && (
-                        <div style={{ width:15, height:15, borderRadius:"50%", background:T.moveDot }}/>
+                        <div style={{ width:16, height:16, borderRadius:"50%", background:T.moveDot }}/>
                       )}
                       {lake && <Lake />}
                       {showPiece && <PieceTile name={piece.name} owner={isHuman ? "mine" : "theirs"} />}
@@ -677,9 +807,9 @@ function GameBoard({ board: initBoard, onReset }) {
             </div>
           </div>
 
-          <div style={{ display:"flex", gap:GAP, marginTop:4 }}>
+          <div style={{ display:"flex", gap:GAP, marginTop:5 }}>
             {Array.from({length:10},(_,i) => (
-              <div key={i} style={{ width:CELL, textAlign:"center", fontSize:9, color:T.textDim, fontFamily:"'Cinzel',serif" }}>
+              <div key={i} style={{ width:CELL, textAlign:"center", fontSize:10, color:T.textDim, fontWeight:600 }}>
                 {String.fromCharCode(65+i)}
               </div>
             ))}
@@ -688,58 +818,68 @@ function GameBoard({ board: initBoard, onReset }) {
       </div>
 
       {/* Panel lateral */}
-      <div style={{ display:"flex", flexDirection:"column", gap:14, width:190, marginTop:38 }}>
+      <div style={{ display:"flex", flexDirection:"column", gap:12, width:200, marginTop:38 }}>
         <div style={{
-          padding:"11px 14px", borderRadius:10, textAlign:"center",
+          padding:"13px 14px", borderRadius:10, textAlign:"center",
           background: turn==="human" ? T.youBg : T.themBg,
           border:`1px solid ${turn==="human" ? T.youBorder : T.themBorder}`,
         }}>
-          <div style={{ fontSize:9, color:T.textSoft, fontFamily:"'Cinzel',serif", letterSpacing:3, marginBottom:3 }}>TURNO</div>
-          <div style={{ color: turn==="human" ? T.youText : T.themText, fontFamily:"'Cinzel',serif", fontSize:13, fontWeight:700 }}>
-            {turn==="human" ? "⚔ Tu turno" : aiThinking ? "🤖 Pensando…" : aiMoveAnim ? "🤖 Moviéndose…" : "🤖 IA"}
+          <div style={{ fontSize:10, color:T.textSoft, letterSpacing:1.6, marginBottom:4, fontWeight:700 }}>TURNO</div>
+          <div style={{ color: turn==="human" ? T.youText : T.themText, fontSize:15, fontWeight:700 }}>
+            {turn==="human" ? "Te toca" : aiThinking ? "Pensando…" : aiMoveAnim ? "Moviéndose…" : "IA"}
           </div>
         </div>
 
-        <div style={{ padding:12, borderRadius:10, background:T.panelBg, border:`1px solid ${T.panelBorder}` }}>
-          <div style={{ fontSize:9, color:T.textSoft, fontFamily:"'Cinzel',serif", letterSpacing:3, marginBottom:8 }}>REGLAS</div>
+        <div style={{ padding:13, borderRadius:10, background:T.panelBg, border:`1px solid ${T.panelBorder}` }}>
+          <PanelTitle>Piezas especiales</PanelTitle>
           {[
-            ["S","Spy","Mata al Marshal"],
-            ["Ⅱ","Scout","Mueve múltiples casillas"],
-            ["Ⅲ","Miner","Desactiva Bombas"],
-            ["✸","Bomb","Inmóvil, mortal"],
-            ["⚑","Flag","¡Captúrala para ganar!"],
-          ].map(([sym,name,tip]) => (
-            <div key={name} style={{ display:"flex", gap:8, marginBottom:6, alignItems:"center" }}>
-              <div style={{ color:rankAccent(name), fontSize:14, width:18, flexShrink:0, fontWeight:700 }}>{sym}</div>
-              <div style={{ color:T.textSoft, fontSize:9.5, lineHeight:1.3 }}>{tip}</div>
+            ["Spy", "Mata al Marshal si ataca"],
+            ["Scout", "Avanza varias casillas"],
+            ["Miner", "Desactiva las bombas"],
+            ["Bomb", "Inmóvil y mortal"],
+            ["Flag", "Captúrala para ganar"],
+          ].map(([name, tip]) => (
+            <div key={name} style={{ display:"flex", gap:9, marginBottom:7, alignItems:"center" }}>
+              <span style={{
+                width:22, height:22, borderRadius:5, flexShrink:0,
+                background:T.mine.bg, border:`1px solid ${T.mine.border}`,
+                display:"flex", alignItems:"center", justifyContent:"center",
+                position:"relative", overflow:"hidden",
+              }}>
+                <span style={{ fontSize:12, fontWeight:800, color:T.mine.ink, marginBottom:1 }}>
+                  {PIECES[name].display}
+                </span>
+                <span style={{ position:"absolute", bottom:0, left:0, width:"100%", height:3, background:rankAccent(name) }}/>
+              </span>
+              <span style={{ color:T.textSoft, fontSize:11, lineHeight:1.25 }}>{tip}</span>
             </div>
           ))}
         </div>
 
-        <div style={{ padding:12, borderRadius:10, background:T.panelBg, border:`1px solid ${T.panelBorder}`, flex:1 }}>
-          <div style={{ fontSize:9, color:T.textSoft, fontFamily:"'Cinzel',serif", letterSpacing:3, marginBottom:8 }}>REGISTRO</div>
+        <div style={{ padding:13, borderRadius:10, background:T.panelBg, border:`1px solid ${T.panelBorder}`, flex:1 }}>
+          <PanelTitle>Registro</PanelTitle>
           {log.map((entry,i) => (
             <div key={i} style={{
-              fontSize:10, color: i===0 ? T.brassBright : T.textDim,
-              marginBottom:4, fontFamily:"monospace", lineHeight:1.35,
+              fontSize:11.5, color: i===0 ? T.brassBright : T.textDim,
+              marginBottom:5, lineHeight:1.35,
               borderLeft: i===0 ? `2px solid ${T.brassSoft}` : "none",
-              paddingLeft: i===0 ? 6 : 0,
+              paddingLeft: i===0 ? 7 : 0,
             }}>{entry}</div>
           ))}
         </div>
 
         <button onClick={onReset} style={{
-          padding:8, background:"rgba(247,238,221,0.06)",
+          padding:9, background:"rgba(247,238,221,0.06)",
           border:`1px solid ${T.panelBorder}`, borderRadius:8,
-          color:T.textSoft, fontFamily:"'Cinzel',serif",
-          fontSize:10, cursor:"pointer", letterSpacing:1,
+          color:T.textSoft, fontFamily:FONTS.ui,
+          fontSize:12, cursor:"pointer",
         }}>Reiniciar</button>
       </div>
     </div>
   );
 }
 
-// ─── ROOT ─────────────────────────────────────────────────────────────────────
+// ─── RAÍZ ─────────────────────────────────────────────────────────────────────
 export default function Stratego() {
   const [phase, setPhase] = useState("setup");
   const [gameBoard, setGameBoard] = useState(null);
@@ -754,10 +894,10 @@ export default function Stratego() {
         repeating-linear-gradient(87deg, transparent 0px, transparent 7px, ${T.grain} 7px, ${T.grain} 8px)
       `,
       display:"flex", flexDirection:"column", alignItems:"center",
-      paddingTop:26, paddingBottom:48,
+      paddingTop:24, paddingBottom:44, fontFamily:FONTS.ui,
     }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&display=swap');
         * { box-sizing: border-box; }
         @keyframes fadeIn   { from{opacity:0} to{opacity:1} }
         @keyframes popIn    { from{transform:scale(0.5);opacity:0} to{transform:scale(1);opacity:1} }
@@ -769,9 +909,9 @@ export default function Stratego() {
            un style={{}} porque el recorte sobre texto necesita el prefijo
            -webkit-, y React no lo pasa de forma fiable desde JavaScript. */
         .titulo-stratego {
-          font-size: 46px;
+          font-size: 42px;
           font-weight: 900;
-          letter-spacing: 14px;
+          letter-spacing: 12px;
           font-family: 'Cinzel', serif;
           display: inline-block;
           background: linear-gradient(135deg, ${T.brass} 0%, #FFE9A8 42%, ${T.brassBright} 62%, #9A6B18 100%);
@@ -783,11 +923,8 @@ export default function Stratego() {
         }
       `}</style>
 
-      <div style={{ textAlign:"center", marginBottom:24 }}>
+      <div style={{ textAlign:"center", marginBottom:20 }}>
         <div className="titulo-stratego">STRATEGO</div>
-        <div style={{ color:T.brass, opacity:0.55, fontSize:10, letterSpacing:7, fontFamily:"'Cinzel',serif", marginTop:4 }}>
-          EL JUEGO DE GUERRA CLÁSICO
-        </div>
       </div>
 
       {phase === "setup" && (
