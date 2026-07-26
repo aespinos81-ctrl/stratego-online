@@ -1,0 +1,16 @@
+/* Estilos mínimos: el juego trae los suyos propios en línea, así que aquí solo
+   quitamos los márgenes del navegador y dejamos el fondo oscuro. */
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100%;
+  background: #0d0b07;
+}
+
+* {
+  box-sizing: border-box;
+}
