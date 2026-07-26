@@ -493,54 +493,87 @@ const botonSecundario = {
   cursor:"pointer", letterSpacing:0.3,
 };
 
-// ─── POPUP DE COMBATE ─────────────────────────────────────────────────────────
-function BattlePopup({ battle, onDone }) {
-  useEffect(() => { const t = setTimeout(onDone, 2400); return () => clearTimeout(t); }, [onDone]);
-  if (!battle) return null;
-  const { attacker, defender, result } = battle;
-  const txt = result === "attacker" ? "¡Gana el atacante!" : result === "defender" ? "¡Gana el defensor!" : "¡Empate!";
-  const col = result === "attacker" ? T.youText : result === "defender" ? T.themText : T.brassBright;
+// ─── COMBATE SOBRE EL TABLERO ─────────────────────────────────────────────────
+// Sin ventanas emergentes: el combate se resuelve donde ocurre. Se destapan las
+// dos fichas sobre la casilla atacada, chocan, y la perdedora (o las dos, si
+// empatan) se rompe y desaparece.
+const COMBATE_REVELAR  = 750;   // ms mostrando las dos fichas frente a frente
+const COMBATE_DESTRUIR = 600;   // ms de la ruptura de la perdedora
+
+// Una de las dos fichas del choque
+function Combatiente({ piece, cae, gana }) {
+  // La animación de entrada va sin retardo y sin `fill-mode`: así, si por lo que
+  // sea se reiniciara, la ficha se queda visible en su estado normal en vez de
+  // desaparecer. Con `both` bastaba un reinicio para dejarla en opacidad cero.
   return (
     <div style={{
-      position:"fixed", inset:0, zIndex:200,
+      width:50, height:50, position:"relative",
       display:"flex", alignItems:"center", justifyContent:"center",
-      background:"rgba(30,15,5,0.78)", backdropFilter:"blur(6px)",
-      animation:"fadeIn 0.2s ease", fontFamily:FONTS.ui,
+      animation: cae ? `romper ${COMBATE_DESTRUIR}ms ease-in forwards`
+               : gana ? "vencer 400ms ease-out"
+               : "entrarChoque 260ms cubic-bezier(0.34,1.56,0.64,1)",
     }}>
+      <PieceTile name={piece.name} owner={piece.player === "human" ? "mine" : "theirs"} scale={1.25} />
+      {/* chispas de la ruptura */}
+      {cae && [0,1,2,3,4,5].map(i => (
+        <span key={i} style={{
+          position:"absolute", left:"50%", top:"50%",
+          width:6, height:6, marginLeft:-3, marginTop:-3,
+          borderRadius:"50%", background: i % 2 ? T.brassBright : T.capture,
+          "--a": `${i * 60}deg`,      // dirección en la que sale cada chispa
+          animation:`chispa ${COMBATE_DESTRUIR}ms ease-out ${60 + i*18}ms forwards`,
+        }}/>
+      ))}
+    </div>
+  );
+}
+
+function CombatOverlay({ combat }) {
+  if (!combat) return null;
+  const { r, c, attacker, defender, result, fase } = combat;
+  const ANCHO_ESCENA = 120;
+  const anchoTablero = 10 * CELL + 9 * GAP;
+  const cx = c * (CELL + GAP) + CELL / 2;
+  const cy = r * (CELL + GAP) + CELL / 2;
+  // Si el combate cae en una columna del borde, pegamos la escena al tablero
+  // para que no se salga por fuera del marco.
+  const izquierda = Math.max(0, Math.min(cx - ANCHO_ESCENA / 2, anchoTablero - ANCHO_ESCENA));
+
+  const cae = quien =>
+    fase === "destruir" &&
+    (result === "both" || (result === "attacker" && quien === "def") || (result === "defender" && quien === "att"));
+  const gana = quien =>
+    fase === "destruir" && result !== "both" &&
+    ((result === "attacker" && quien === "att") || (result === "defender" && quien === "def"));
+
+  return (
+    <div style={{
+      position:"absolute", zIndex:20, pointerEvents:"none",
+      left: izquierda, top: cy - 32,
+      width: ANCHO_ESCENA, height:64,
+      display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+    }}>
+      {/* Fondo oscuro: despega la escena de las casillas de alrededor. Sin
+          animación a propósito: al cambiar de fase se reiniciaría y se quedaría
+          congelado en su primer fotograma, es decir, invisible. */}
       <div style={{
-        background:T.frameBg,
-        border:`2px solid ${T.brassSoft}`, borderRadius:18,
-        padding:"28px 46px", textAlign:"center",
-        boxShadow:"0 20px 60px rgba(0,0,0,0.55)",
-        animation:"popIn 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-      }}>
-        <div style={{ color:T.brass, fontSize:11, letterSpacing:2.5, marginBottom:20, fontWeight:700 }}>
-          ⚔ COMBATE ⚔
-        </div>
-        <div style={{ display:"flex", gap:32, alignItems:"center", marginBottom:20 }}>
-          {[{p:attacker,label:"Atacante"}, null, {p:defender,label:"Defensor"}].map((item,i) =>
-            item === null ? (
-              <div key={i} style={{ fontSize:15, color:T.brass, fontWeight:700 }}>VS</div>
-            ) : (
-              <div key={i} style={{ textAlign:"center" }}>
-                <div style={{ width:70, height:70, margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"center" }}>
-                  <PieceTile name={item.p.name} owner={item.p.player==="human" ? "mine" : "theirs"} scale={1.7} />
-                </div>
-                <div style={{ color:T.text, fontSize:13, marginTop:8, fontWeight:600 }}>
-                  {PIECES[item.p.name].label}
-                </div>
-                <div style={{
-                  fontSize:11, marginTop:2,
-                  color: item.p.player==="human" ? T.youText : T.themText,
-                }}>
-                  {item.p.player==="human" ? "Tú" : "IA"} · {item.label}
-                </div>
-              </div>
-            )
-          )}
-        </div>
-        <div style={{ fontSize:17, fontWeight:700, color:col }}>{txt}</div>
-      </div>
+        position:"absolute", inset:0, borderRadius:12,
+        background:"rgba(28,14,4,0.72)",
+        border:`1px solid ${T.brassSoft}`,
+        boxShadow:"0 6px 20px rgba(0,0,0,0.5)",
+      }}/>
+      {/* Destello del impacto: solo existe mientras se destapan las fichas */}
+      {fase === "revelar" && (
+        <div style={{
+          position:"absolute", left:"50%", top:"50%",
+          width:70, height:70, marginLeft:-35, marginTop:-35,
+          borderRadius:"50%",
+          background:`radial-gradient(circle, ${T.brassBright}66 0%, transparent 70%)`,
+          animation:"destello 500ms ease-out forwards",
+        }}/>
+      )}
+      <Combatiente piece={attacker} cae={cae("att")} gana={gana("att")} />
+      <Combatiente piece={defender} cae={cae("def")} gana={gana("def")} />
     </div>
   );
 }
@@ -609,12 +642,17 @@ function GameBoard({ board: initBoard, onReset }) {
   const [selCell, setSelCell]     = useState(null);
   const [validMoves, setValidMoves] = useState([]);
   const [turn, setTurn]           = useState("human");
-  const [battle, setBattle]       = useState(null);
+  const [combat, setCombat]       = useState(null);
   const [gameOver, setGameOver]   = useState(null);
   const [log, setLog]             = useState(["¡La batalla comienza!"]);
   const [aiMoveAnim, setAiMoveAnim] = useState(null);
   const [aiThinking, setAiThinking] = useState(false);
-  const pendingRef = useRef(null);
+
+  // Todos los temporizadores en marcha, para poder cancelarlos si el jugador
+  // reinicia la partida a media animación.
+  const timersRef = useRef([]);
+  useEffect(() => () => timersRef.current.forEach(clearTimeout), []);
+  const programar = (fn, ms) => { timersRef.current.push(setTimeout(fn, ms)); };
 
   const addLog = msg => setLog(prev => [msg, ...prev].slice(0, 18));
 
@@ -629,7 +667,10 @@ function GameBoard({ board: initBoard, onReset }) {
       if (result === "attacker")      { nb[tr][tc] = {...piece, revealed:true}; nb[fr][fc] = null; }
       else if (result === "defender") { nb[fr][fc] = null; nb[tr][tc] = {...target, revealed:true}; }
       else                            { nb[fr][fc] = null; nb[tr][tc] = null; }
-      addLog(`${PIECES[piece.name].label} atacó a ${PIECES[target.name].label}`);
+      const desenlace = result === "attacker" ? `gana ${PIECES[piece.name].label}`
+                      : result === "defender" ? `resiste ${PIECES[target.name].label}`
+                      : "caen las dos";
+      addLog(`${PIECES[piece.name].label} ⚔ ${PIECES[target.name].label} · ${desenlace}`);
     } else {
       nb[tr][tc] = piece;
       nb[fr][fc] = null;
@@ -637,59 +678,60 @@ function GameBoard({ board: initBoard, onReset }) {
     return { nb, battleInfo };
   }
 
+  // Cuando hay combate no actualizamos el tablero de inmediato: primero se ve la
+  // escena sobre la casilla atacada, y al terminar se aplica el resultado.
+  function escenificarCombate(nb, battleInfo, fr, fc, tr, tc, despues) {
+    setCombat({ ...battleInfo, fr, fc, r: tr, c: tc, fase: "revelar" });
+    programar(() => setCombat(k => (k ? { ...k, fase: "destruir" } : k)), COMBATE_REVELAR);
+    programar(() => {
+      setCombat(null);
+      setBoard(nb);
+      const winner = checkWinner(nb);
+      if (winner) { setGameOver(winner); return; }
+      despues();
+    }, COMBATE_REVELAR + COMBATE_DESTRUIR);
+  }
+
   function doAiTurn(b) {
     setTurn("ai");
     setAiThinking(true);
-    setTimeout(() => {
+    programar(() => {
       const move = aiMove(b);
       if (!move) { setTurn("human"); setAiThinking(false); return; }
       setAiThinking(false);
       setAiMoveAnim({ ...move });
 
-      setTimeout(() => {
+      programar(() => {
         const { nb, battleInfo } = applyMove(b, move.fr, move.fc, move.tr, move.tc);
         setAiMoveAnim(null);
+        if (battleInfo) {
+          escenificarCombate(nb, battleInfo, move.fr, move.fc, move.tr, move.tc, () => setTurn("human"));
+          return;
+        }
         setBoard(nb);
         const winner = checkWinner(nb);
-        if (battleInfo) {
-          setBattle(battleInfo);
-          pendingRef.current = { winner };
-        } else {
-          setTurn("human");
-          if (winner) setGameOver(winner);
-        }
+        if (winner) { setGameOver(winner); return; }
+        setTurn("human");
       }, 950);
     }, 650);
   }
 
-  function handleBattleDone() {
-    setBattle(null);
-    const { winner } = pendingRef.current || {};
-    pendingRef.current = null;
-    if (winner) { setGameOver(winner); return; }
-    const w2 = checkWinner(board);
-    if (w2) { setGameOver(w2); return; }
-    if (turn === "ai") setTurn("human");
-    else doAiTurn(board);
-  }
-
   function clickCell(r, c) {
-    if (turn !== "human" || battle || gameOver || aiMoveAnim || aiThinking) return;
+    if (turn !== "human" || combat || gameOver || aiMoveAnim || aiThinking) return;
     const piece = board[r][c];
     if (selCell) {
       const [sr, sc] = selCell;
       if (validMoves.some(([mr,mc]) => mr===r && mc===c)) {
         const { nb, battleInfo } = applyMove(board, sr, sc, r, c);
-        setBoard(nb);
         setSelCell(null); setValidMoves([]);
-        const winner = checkWinner(nb);
         if (battleInfo) {
-          setBattle(battleInfo);
-          pendingRef.current = { winner };
-        } else {
-          if (winner) { setGameOver(winner); return; }
-          doAiTurn(nb);
+          escenificarCombate(nb, battleInfo, sr, sc, r, c, () => doAiTurn(nb));
+          return;
         }
+        setBoard(nb);
+        const winner = checkWinner(nb);
+        if (winner) { setGameOver(winner); return; }
+        doAiTurn(nb);
       } else if (piece?.player === "human") {
         setSelCell([r,c]);
         setValidMoves(getValidMoves(board, r, c));
@@ -709,8 +751,6 @@ function GameBoard({ board: initBoard, onReset }) {
 
   return (
     <div style={{ display:"flex", gap:20, alignItems:"flex-start", fontFamily:FONTS.ui }}>
-      {battle && <BattlePopup battle={battle} onDone={handleBattleDone} />}
-
       {gameOver && (
         <div style={{
           position:"fixed", inset:0, zIndex:300,
@@ -768,6 +808,7 @@ function GameBoard({ board: initBoard, onReset }) {
         }}>
           <div style={{ position:"relative" }}>
             <AiMoveArrow aiMoveAnim={aiMoveAnim} />
+            <CombatOverlay combat={combat} />
             <div style={{ display:"grid", gridTemplateColumns:`repeat(10,${CELL}px)`, gap:GAP }}>
               {board.map((row, r) =>
                 row.map((piece, c) => {
@@ -776,7 +817,10 @@ function GameBoard({ board: initBoard, onReset }) {
                   const valid      = isValid(r, c);
                   const isHuman    = piece?.player === "human";
                   const isAi       = piece?.player === "ai";
-                  const showPiece  = isHuman || (isAi && piece?.revealed);
+                  // Las dos fichas que están combatiendo se dibujan en la escena
+                  // del combate, no en su casilla: aquí las ocultamos.
+                  const luchando   = combat && ((combat.r === r && combat.c === c) || (combat.fr === r && combat.fc === c));
+                  const showPiece  = !luchando && (isHuman || (isAi && piece?.revealed));
                   const attackable = valid && piece?.player === "ai";
 
                   return (
@@ -799,7 +843,7 @@ function GameBoard({ board: initBoard, onReset }) {
                       )}
                       {lake && <Lake />}
                       {showPiece && <PieceTile name={piece.name} owner={isHuman ? "mine" : "theirs"} />}
-                      {isAi && !piece.revealed && <HiddenTile />}
+                      {isAi && !piece.revealed && !luchando && <HiddenTile />}
                     </div>
                   );
                 })
@@ -904,6 +948,43 @@ export default function Stratego() {
         @keyframes pulseRed { from{opacity:0.7} to{opacity:1} }
         @keyframes pulseGold{ from{opacity:0.6} to{opacity:1} }
         @keyframes slideIn  { from{opacity:0} to{opacity:1} }
+
+        /* ── Combate ───────────────────────────────────────────────────────── */
+        /* Las dos fichas entran una contra otra.
+           A propósito NO se anima la opacidad: si el navegador tarda en pintar
+           el primer fotograma, la ficha se quedaría invisible. Animando solo la
+           escala, en el peor caso se ve algo más pequeña un instante. */
+        @keyframes entrarChoque {
+          from { transform: scale(0.55) }
+          to   { transform: scale(1) }
+        }
+        /* Destello del impacto */
+        @keyframes destello {
+          0%   { transform: scale(0.3); opacity: 0 }
+          35%  { transform: scale(1);   opacity: 1 }
+          100% { transform: scale(1.5); opacity: 0 }
+        }
+        /* La ficha que pierde: tiembla y se rompe */
+        @keyframes romper {
+          0%   { transform: translateX(0)    rotate(0deg);   opacity: 1 }
+          12%  { transform: translateX(-4px) rotate(-7deg);  opacity: 1 }
+          24%  { transform: translateX(4px)  rotate(7deg);   opacity: 1 }
+          36%  { transform: translateX(-3px) rotate(-5deg);  opacity: 1 }
+          48%  { transform: translateX(3px)  rotate(4deg);   opacity: 1 }
+          60%  { transform: translateX(0)    rotate(0deg);   opacity: 1 }
+          100% { transform: scale(0.25) rotate(24deg);       opacity: 0 }
+        }
+        /* Chispas que saltan de la ficha rota */
+        @keyframes chispa {
+          from { transform: rotate(var(--a,0deg)) translateY(-4px)  scale(1); opacity: 1 }
+          to   { transform: rotate(var(--a,0deg)) translateY(-30px) scale(0); opacity: 0 }
+        }
+        /* La ficha que gana da un pequeño empujón */
+        @keyframes vencer {
+          0%   { transform: scale(1) }
+          40%  { transform: scale(1.16) }
+          100% { transform: scale(1) }
+        }
 
         /* El degradado del título se recorta sobre las letras. Va aquí y no en
            un style={{}} porque el recorte sobre texto necesita el prefijo
