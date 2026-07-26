@@ -83,24 +83,33 @@ function resolveBattle(attName, defName) {
   return "both";
 }
 
+// ── Cuántas casillas puede recorrer cada pieza de una vez ────────────────────
+// Explorador: sin límite. Capitán o superior (rango 6+): hasta 2. El resto: 1.
+// Dar dos casillas a la oficialidad agiliza mucho la partida, y a cambio un
+// salto de 2 deja de ser la firma inconfundible del Explorador: ahora también
+// puede ser un oficial. Esa ambigüedad es deliberada.
+const ALCANCE_OFICIALES = 2;
+const RANGO_OFICIAL = 6;
+
+const alcanceDe = name =>
+  name === "Scout" ? Infinity
+  : PIECES[name].rank >= RANGO_OFICIAL ? ALCANCE_OFICIALES
+  : 1;
+
 function getValidMoves(board, row, col) {
   const piece = board[row][col];
   if (!piece || piece.name === "Bomb" || piece.name === "Flag") return [];
+  const alcance = alcanceDe(piece.name);
   const moves = [];
   for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
-    if (piece.name === "Scout") {
-      let r = row + dr, c = col + dc;
-      while (r >= 0 && r < 10 && c >= 0 && c < 10 && !isLake(r, c)) {
-        const t = board[r][c];
-        if (t) { if (t.player !== piece.player) moves.push([r, c]); break; }
-        moves.push([r, c]);
-        r += dr; c += dc;
-      }
-    } else {
-      const r = row + dr, c = col + dc;
-      if (r < 0 || r >= 10 || c < 0 || c >= 10 || isLake(r, c)) continue;
+    let r = row + dr, c = col + dc, pasos = 1;
+    // Avanza en línea recta hasta agotar su alcance. Nadie salta por encima de
+    // nada: la primera pieza o lago que encuentre le corta el paso.
+    while (pasos <= alcance && r >= 0 && r < 10 && c >= 0 && c < 10 && !isLake(r, c)) {
       const t = board[r][c];
-      if (!t || t.player !== piece.player) moves.push([r, c]);
+      if (t) { if (t.player !== piece.player) moves.push([r, c]); break; }
+      moves.push([r, c]);
+      r += dr; c += dc; pasos++;
     }
   }
   return moves;
@@ -239,15 +248,18 @@ function MiniFicha({ name, owner = "mine", size = 24, apagada = false }) {
 }
 
 // Dorso de ficha enemiga: no revela nada, solo el emblema de latón.
-// Encima lleva lo que hayas podido DEDUCIR de ella:
-//   · un punto  → esta pieza se ha movido, así que no es bomba ni bandera
-//   · un "II"   → se movió varias casillas de golpe: solo el Explorador puede
-function HiddenTile({ movida, explorador }) {
-  const marca = explorador
-    ? { texto: "II", pista: "Se movió varias casillas: solo puede ser un Explorador" }
-    : movida
-      ? { texto: "", pista: "Ya se ha movido: no puede ser bomba ni bandera" }
-      : null;
+// Encima lleva lo que hayas podido DEDUCIR de ella por cómo se ha movido:
+//   · un punto → se ha movido: no es bomba ni bandera
+//   · un "2"   → dio un salto de dos: Explorador u oficial (Capitán o superior)
+//   · un "II"  → dio un salto de tres o más: solo puede ser un Explorador
+function HiddenTile({ movida, salto }) {
+  const marca = salto >= 3
+    ? { texto: "II", pista: "Saltó tres casillas o más: solo puede ser un Explorador" }
+    : salto === 2
+      ? { texto: "2", pista: "Saltó dos casillas: es un Explorador o un oficial (Capitán o superior)" }
+      : movida
+        ? { texto: "", pista: "Ya se ha movido: no puede ser bomba ni bandera" }
+        : null;
   return (
     <div style={{
       width:"90%", height:"90%", borderRadius:7,
@@ -283,42 +295,42 @@ const Lake = () => <span style={{ fontSize:20, color:T.lakeWave }}>〰</span>;
 // Qué piezas ha perdido cada bando. En un tablero de verdad las ves apartadas a
 // un lado; aquí había que enseñarlas. Saber cuántas bombas quedan por salir
 // cambia por completo cómo se juega el final.
-function Cementerio({ bajas }) {
-  const ordenar = lista => [...lista].sort((a, b) => PIECES[b].rank - PIECES[a].rank);
-
-  // Cuántas quedan vivas de un tipo concreto
-  const quedan = (lado, name) =>
-    PIECES[name].count - bajas[lado].filter(n => n === name).length;
-
-  const bando = (lado, etiqueta, owner) => (
-    <div style={{ marginBottom:8 }}>
-      <div style={{ fontSize:10, color:T.textSoft, marginBottom:4, fontWeight:600 }}>
-        {etiqueta} <span style={{ color:T.textDim }}>· {bajas[lado].length} de 40</span>
-      </div>
-      {bajas[lado].length === 0 ? (
-        <div style={{ fontSize:10, color:T.textDim }}>sin bajas</div>
-      ) : (
-        <div style={{ display:"flex", flexWrap:"wrap", gap:3, opacity:0.8 }}>
-          {ordenar(bajas[lado]).map((n, i) => (
-            <MiniFicha key={i} name={n} owner={owner} size={19} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-
+// Un cementerio por jugador, desglosado por tipo de pieza: "3/4" significa que
+// han caído 3 de los 4 que había. Los tipos intactos se ven apagados, y los que
+// se han agotado del todo salen en latón: que al rival no le queden mineros, o
+// que ya hayan salido todas sus bombas, cambia la partida entera.
+function Cementerio({ bajas, etiqueta, owner }) {
+  const total = bajas.length;
   return (
     <div style={{ padding:13, borderRadius:10, background:T.panelBg, border:`1px solid ${T.panelBorder}` }}>
-      <PanelTitle>Bajas</PanelTitle>
-      {bando("ai", "La IA ha perdido", "theirs")}
-      {bando("human", "Has perdido", "mine")}
-      {/* Las dos cuentas que de verdad deciden el final de la partida */}
       <div style={{
-        borderTop:`1px solid ${T.panelBorder}`, paddingTop:7, marginTop:2,
-        fontSize:10.5, color:T.textSoft, lineHeight:1.5,
+        display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:9,
       }}>
-        <div>Bombas · IA <b style={{color:T.text}}>{quedan("ai","Bomb")}</b> · tú <b style={{color:T.text}}>{quedan("human","Bomb")}</b></div>
-        <div>Mineros · IA <b style={{color:T.text}}>{quedan("ai","Miner")}</b> · tú <b style={{color:T.text}}>{quedan("human","Miner")}</b></div>
+        <span style={{
+          fontSize:10, color:T.textSoft, letterSpacing:1.6,
+          fontWeight:700, textTransform:"uppercase",
+        }}>{etiqueta}</span>
+        <span style={{ fontSize:10, color: total ? T.brass : T.textDim }}>{total}/40</span>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:"6px 4px" }}>
+        {PIECE_NAMES.map(name => {
+          const caidos = bajas.filter(n => n === name).length;
+          const cuantos = PIECES[name].count;
+          const ninguna = caidos === 0;
+          const todas = caidos === cuantos;
+          return (
+            <div key={name}
+              title={`${PIECES[name].label}: ${caidos} de ${cuantos} ${caidos === 1 ? "caído" : "caídos"}`}
+              style={{ display:"flex", alignItems:"center", gap:4, opacity: ninguna ? 0.38 : 1 }}>
+              <MiniFicha name={name} owner={owner} size={18} apagada={ninguna} />
+              <span style={{
+                fontFamily:FONTS.ui, fontSize:10.5,
+                color: todas ? T.brassBright : T.textSoft,
+                fontWeight: todas ? 700 : 500,
+              }}>{caidos}/{cuantos}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -787,10 +799,12 @@ function GameBoard({ board: initBoard, onReset }) {
     const target = nb[tr][tc];
     const distancia = Math.abs(tr - fr) + Math.abs(tc - fc);
 
-    // Marcas de deducción: quien se mueve no es bomba ni bandera, y quien se
-    // mueve más de una casilla solo puede ser un Explorador.
+    // Marcas de deducción. Guardamos el salto más largo que le hemos visto dar:
+    //   1  → no es bomba ni bandera
+    //   2  → Explorador u oficial (Capitán o superior)
+    //   3+ → solo puede ser un Explorador
     piece.hasMoved = true;
-    if (distancia > 1) piece.knownScout = true;
+    piece.maxSalto = Math.max(piece.maxSalto ?? 1, distancia);
 
     let battleInfo = null, mensaje = null;
     const bajas = [];
@@ -1007,7 +1021,7 @@ function GameBoard({ board: initBoard, onReset }) {
                       {lake && <Lake />}
                       {showPiece && <PieceTile name={piece.name} owner={isHuman ? "mine" : "theirs"} />}
                       {isAi && !piece.revealed && !luchando && (
-                        <HiddenTile movida={piece.hasMoved} explorador={piece.knownScout} />
+                        <HiddenTile movida={piece.hasMoved} salto={piece.maxSalto} />
                       )}
                     </div>
                   );
@@ -1027,7 +1041,7 @@ function GameBoard({ board: initBoard, onReset }) {
       </div>
 
       {/* Panel lateral */}
-      <div style={{ display:"flex", flexDirection:"column", gap:12, width:200, marginTop:38 }}>
+      <div style={{ display:"flex", flexDirection:"column", gap:12, width:216, marginTop:38 }}>
         <div style={{
           padding:"13px 14px", borderRadius:10, textAlign:"center",
           background: turn==="human" ? T.youBg : T.themBg,
@@ -1039,13 +1053,15 @@ function GameBoard({ board: initBoard, onReset }) {
           </div>
         </div>
 
-        <Cementerio bajas={bajas} />
+        <Cementerio bajas={bajas.ai} etiqueta="Bajas de la IA" owner="theirs" />
+        <Cementerio bajas={bajas.human} etiqueta="Tus bajas" owner="mine" />
 
         <div style={{ padding:13, borderRadius:10, background:T.panelBg, border:`1px solid ${T.panelBorder}` }}>
           <PanelTitle>Piezas especiales</PanelTitle>
           {[
             ["Spy", "Mata al Marshal si ataca"],
-            ["Scout", "Avanza varias casillas"],
+            ["Scout", "Avanza sin límite en línea recta"],
+            ["Captain", "Capitán o superior: hasta 2 casillas"],
             ["Miner", "Desactiva las bombas"],
             ["Bomb", "Inmóvil y mortal"],
             ["Flag", "Captúrala para ganar"],

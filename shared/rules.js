@@ -21,6 +21,19 @@ export function resolveBattle(attackerName, defenderName) {
   return "both";
 }
 
+// ── ¿Cuántas casillas recorre cada pieza de una vez? ─────────────────────────
+// Explorador: sin límite. Capitán o superior (rango 6+): hasta 2. El resto: 1.
+// Dar dos casillas a la oficialidad agiliza la partida y, de paso, un salto de
+// dos deja de ser la firma inconfundible del Explorador: también puede ser un
+// oficial. Esa ambigüedad es deliberada.
+export const ALCANCE_OFICIALES = 2;
+export const RANGO_OFICIAL = 6;
+
+export function alcanceDe(name) {
+  if (name === "Scout") return Infinity;
+  return PIECES[name].rank >= RANGO_OFICIAL ? ALCANCE_OFICIALES : 1;
+}
+
 // ── ¿A dónde puede moverse una pieza? ────────────────────────────────────────
 // board: matriz 10x10 de { name, player } | null
 // Devuelve una lista de [fila, columna] destino válidas.
@@ -29,28 +42,22 @@ export function getValidMoves(board, row, col) {
   if (!piece) return [];
   if (piece.name === "Bomb" || piece.name === "Flag") return []; // no se mueven
 
+  const alcance = alcanceDe(piece.name);
   const moves = [];
   const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
 
   for (const [dr, dc] of dirs) {
-    if (piece.name === "Scout") {
-      // El explorador avanza en línea recta cualquier número de casillas libres
-      let r = row + dr, c = col + dc;
-      while (r >= 0 && r < 10 && c >= 0 && c < 10 && !isLake(r, c)) {
-        const target = board[r][c];
-        if (target) {
-          if (target.player !== piece.player) moves.push([r, c]); // puede atacar
-          break;                                                   // no salta piezas
-        }
-        moves.push([r, c]);
-        r += dr; c += dc;
-      }
-    } else {
-      // El resto se mueve una sola casilla ortogonal
-      const r = row + dr, c = col + dc;
-      if (r < 0 || r >= 10 || c < 0 || c >= 10 || isLake(r, c)) continue;
+    let r = row + dr, c = col + dc, pasos = 1;
+    // Avanza en línea recta hasta agotar su alcance. Nadie salta por encima de
+    // nada: la primera pieza o lago que encuentre le corta el paso.
+    while (pasos <= alcance && r >= 0 && r < 10 && c >= 0 && c < 10 && !isLake(r, c)) {
       const target = board[r][c];
-      if (!target || target.player !== piece.player) moves.push([r, c]);
+      if (target) {
+        if (target.player !== piece.player) moves.push([r, c]); // puede atacar
+        break;                                                  // no salta piezas
+      }
+      moves.push([r, c]);
+      r += dr; c += dc; pasos++;
     }
   }
   return moves;

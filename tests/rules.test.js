@@ -111,6 +111,37 @@ test("el explorador avanza en línea recta pero no salta piezas", () => {
   assert.ok(!destinos.includes("5,0"));           // ni saltar por encima
 });
 
+test("del Capitán para arriba se mueven hasta dos casillas", () => {
+  const b = tableroVacio();
+  b[9][0] = { name: "Captain", player: "p1" };     // rango 6: es oficial
+  b[9][5] = { name: "Lieutenant", player: "p1" };  // rango 5: no lo es
+  const oficial = getValidMoves(b, 9, 0).map(([r, c]) => `${r},${c}`);
+  const tropa   = getValidMoves(b, 9, 5).map(([r, c]) => `${r},${c}`);
+
+  assert.ok(oficial.includes("8,0"));
+  assert.ok(oficial.includes("7,0"), "el oficial debe poder avanzar dos");
+  assert.ok(!oficial.includes("6,0"), "pero no tres");
+
+  assert.ok(tropa.includes("8,5"));
+  assert.ok(!tropa.includes("7,5"), "la tropa solo avanza una casilla");
+});
+
+test("el oficial tampoco salta por encima de las piezas", () => {
+  const b = tableroVacio();
+  b[9][0] = { name: "Marshal", player: "p1" };
+  b[8][0] = { name: "Miner", player: "p1" };       // pieza propia bloqueando
+  b[9][3] = { name: "General", player: "p1" };
+  b[9][4] = { name: "Scout", player: "p2" };       // enemigo pegado
+
+  const bloqueado = getValidMoves(b, 9, 0).map(([r, c]) => `${r},${c}`);
+  assert.ok(!bloqueado.includes("8,0"));
+  assert.ok(!bloqueado.includes("7,0"), "no puede saltar a los suyos");
+
+  const general = getValidMoves(b, 9, 3).map(([r, c]) => `${r},${c}`);
+  assert.ok(general.includes("9,4"), "puede atacar al que tiene al lado");
+  assert.ok(!general.includes("9,5"), "pero se detiene ahí, no lo atraviesa");
+});
+
 test("nadie puede meterse en los lagos", () => {
   const b = tableroVacio();
   b[4][1] = { name: "Sergeant", player: "p1" };

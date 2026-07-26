@@ -167,13 +167,22 @@ despliegue en el servidor y **regla de las dos casillas** (`MAX_SHUTTLE_MOVES`
 en `shared/rules.js`: una pieza no puede hacer el vaivén entre las mismas dos
 casillas más de 3 turnos seguidos).
 
-**Ayudas de deducción** (de momento solo en el cliente, versión offline):
-cementerio con las bajas de cada bando, marca de "esta pieza ya se ha movido"
-(luego no es bomba ni bandera), marca de Explorador confirmado al mover varias
-casillas de golpe, y rastro de la última jugada del rival.
+**Movimiento** (en `shared/rules.js`, lo usan cliente y servidor):
+- Explorador: línea recta sin límite.
+- **Capitán o superior (rango 6+): hasta 2 casillas.**
+- El resto: 1 casilla.
+
+Nadie salta por encima de nada. Ojo al efecto secundario: un salto de dos ya no
+identifica a un Explorador, porque también puede ser un oficial.
+
+**Ayudas de deducción** (de momento solo en el cliente, versión offline): un
+cementerio por jugador desglosado por tipo de pieza, y marcas sobre las fichas
+enemigas según el salto más largo que les hayas visto dar — 1 casilla: no es
+bomba ni bandera; 2: Explorador u oficial; 3 o más: Explorador seguro. Más el
+rastro de la última jugada del rival.
 
 > ⚠️ Al conectar el multijugador, `viewFor()` tendrá que enviar `hasMoved` y
-> `knownScout` de las piezas enemigas ocultas. No es hacer trampa: son datos que
+> `maxSalto` de las piezas enemigas ocultas. No es hacer trampa: son datos que
 > cualquiera puede deducir mirando el tablero. Si no se envían, el jugador online
 > perderá unas ayudas que sí tiene contra la IA.
 
