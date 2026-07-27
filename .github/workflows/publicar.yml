@@ -30,9 +30,12 @@ jobs:
         with:
           node-version: 22
 
+      # npm install y no npm ci: el lock se genera en macOS y algunas
+      # dependencias opcionales son distintas en Linux, que es donde corre esto.
+      # npm ci exige coincidencia exacta y se cae por esa diferencia.
       - name: Instalar dependencias del cliente
         working-directory: client
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Comprobar las reglas antes de publicar
         run: npm test
