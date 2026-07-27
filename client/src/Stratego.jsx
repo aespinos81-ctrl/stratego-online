@@ -234,20 +234,28 @@ function relieveDe(color, alturaPx, elevada) {
   return [...capas, sombra].join(", ");
 }
 
-function PieceTile({ name, owner = "mine", scale = 1, dim = false, relieve = false, elevada = false }) {
+function PieceTile({ name, owner = "mine", scale = 1, dim = false, relieve = false, elevada = false, grosor = 0 }) {
   const skin = owner === "mine" ? T.mine : T.theirs;
   const d = PIECES[name];
   return (
     <div title={d.label} style={{
-      width:"90%", height:"90%", borderRadius:7,
+      width: grosor ? "100%" : "90%",
+      height: grosor ? "100%" : "90%",
+      position:"relative", transformStyle:"preserve-3d",
+      transform: !grosor && relieve && elevada ? "translateY(-4px)" : "none",
+      transition:"transform 0.14s ease",
+      opacity: dim ? 0.35 : 1,
+    }}>
+    {grosor > 0 && <Cantos skin={skin} grosor={grosor} />}
+    <div style={{
+      position:"absolute", inset:0, borderRadius:7,
       background:skin.bg, border:`1px solid ${skin.border}`,
-      boxShadow: relieve ? relieveDe(skin.border, Math.round(4 * scale), elevada) : skin.shadow,
-      transform: relieve && elevada ? "translateY(-4px)" : "none",
-      transition:"transform 0.14s ease, box-shadow 0.14s ease",
+      boxShadow: grosor ? "none"
+               : relieve ? relieveDe(skin.border, Math.round(4 * scale), elevada)
+               : skin.shadow,
       display:"flex", flexDirection:"column",
       alignItems:"center", justifyContent:"center",
-      position:"relative", overflow:"hidden",
-      opacity: dim ? 0.35 : 1,
+      overflow:"hidden",
     }}>
       <Insignia name={name} color={skin.inkSoft} scale={scale} />
       <span style={{
@@ -259,6 +267,7 @@ function PieceTile({ name, owner = "mine", scale = 1, dim = false, relieve = fal
         position:"absolute", bottom:0, left:0, width:"100%", height:4,
         background:rankAccent(name),
       }}/>
+    </div>
     </div>
   );
 }
@@ -294,7 +303,7 @@ function MiniFicha({ name, owner = "mine", size = 24, apagada = false }) {
 //   · un punto → se ha movido: no es bomba ni bandera
 //   · un "2"   → dio un salto de dos: Explorador u oficial (Capitán o superior)
 //   · un "II"  → dio un salto de tres o más: solo puede ser un Explorador
-function HiddenTile({ movida, salto, relieve = false }) {
+function HiddenTile({ movida, salto, relieve = false, grosor = 0 }) {
   const marca = salto >= 3
     ? { texto: "II", pista: "Saltó tres casillas o más: solo puede ser un Explorador" }
     : salto === 2
@@ -304,11 +313,17 @@ function HiddenTile({ movida, salto, relieve = false }) {
         : null;
   return (
     <div style={{
-      width:"90%", height:"90%", borderRadius:7,
+      width: grosor ? "100%" : "90%",
+      height: grosor ? "100%" : "90%",
+      position:"relative", transformStyle:"preserve-3d",
+    }}>
+    {grosor > 0 && <Cantos skin={T.hidden} grosor={grosor} />}
+    <div style={{
+      position:"absolute", inset:0, borderRadius:7,
       background:T.hidden.bg, border:`1px solid ${T.hidden.border}`,
-      boxShadow: relieve ? relieveDe(T.hidden.border, 4, false) : "0 2px 4px rgba(0,0,0,0.4)",
+      boxShadow: grosor ? "none" : relieve ? relieveDe(T.hidden.border, 4, false) : "0 2px 4px rgba(0,0,0,0.4)",
       display:"flex", alignItems:"center", justifyContent:"center",
-      position:"relative", overflow:"hidden",
+      overflow:"hidden",
     }}>
       <div style={{
         position:"absolute", inset:0,
@@ -328,6 +343,7 @@ function HiddenTile({ movida, salto, relieve = false }) {
         }}>{marca.texto}</span>
       )}
     </div>
+    </div>
   );
 }
 
@@ -339,23 +355,55 @@ const Lake = () => <span style={{ fontSize:20, color:T.lakeWave }}>〰</span>;
 // así que su base queda apoyada en la casilla y el cuerpo se levanta hacia el
 // jugador — como las fichas de cartón del juego de mesa. La sombra elíptica al
 // pie es la que remata la ilusión: sin ella, la ficha parece flotar.
-function EnPie({ inclinacion, children }) {
+function EnPie({ inclinacion, celda, children }) {
   if (!inclinacion) return children;
+  // Una ficha de pie es MÁS ALTA que su casilla: sobresale por arriba y tapa
+  // parcialmente la fila de detrás. Ese solapamiento es la señal que de verdad
+  // dice "esto está levantado" — sin él, por mucho canto que le pongas, se
+  // sigue leyendo como una pegatina.
+  const alto = celda * 1.12;   // algo más alta que la casilla, sin comerse la fila de atrás
   return (
     <>
+      {/* sombra proyectada en la casilla, al pie de la ficha */}
       <span style={{
-        position:"absolute", bottom:"7%", left:"15%",
-        width:"70%", height:5, borderRadius:"50%",
-        background:"rgba(0,0,0,0.45)", filter:"blur(2.5px)",
+        position:"absolute", bottom:"9%", left:"12%",
+        width:"76%", height:6, borderRadius:"50%",
+        background:"rgba(0,0,0,0.5)", filter:"blur(3px)",
         pointerEvents:"none",
       }}/>
       <div style={{
-        width:"100%", height:"100%",
-        display:"flex", alignItems:"flex-end", justifyContent:"center",
+        position:"absolute", left:"6%", bottom:"8%",
+        width:"88%", height:alto,
         transform:`rotateX(${-inclinacion}deg)`,
-        transformOrigin:"50% 92%",
+        transformOrigin:"50% 100%",   // la base, que es por donde se apoya
         transformStyle:"preserve-3d",
       }}>{children}</div>
+    </>
+  );
+}
+
+// Las tres caras que se ven de una ficha de pie: la de arriba, que recibe la
+// luz, y las dos laterales, en sombra. Todas salen hacia atrás desde su borde
+// de la cara frontal, formando un bloque de verdad.
+function Cantos({ skin, grosor }) {
+  const comun = { position:"absolute", backfaceVisibility:"hidden" };
+  return (
+    <>
+      <div style={{
+        ...comun, top:0, left:0, width:"100%", height:grosor,
+        background:skin.cantoAlto, borderRadius:"7px 7px 0 0",
+        transformOrigin:"50% 0%", transform:"rotateX(-90deg)",
+      }}/>
+      <div style={{
+        ...comun, top:0, left:0, width:grosor, height:"100%",
+        background:skin.cantoLado,
+        transformOrigin:"0% 50%", transform:"rotateY(90deg)",
+      }}/>
+      <div style={{
+        ...comun, top:0, right:0, width:grosor, height:"100%",
+        background:skin.cantoLado,
+        transformOrigin:"100% 50%", transform:"rotateY(-90deg)",
+      }}/>
     </>
   );
 }
@@ -509,6 +557,8 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
   const relieve = camara.inclinacion > 0;
   const celda = camara.tamano;
   const [marcoRef, hueco] = useHuecoDeTablero(camara);
+  // espesor del bloque, proporcional al tamaño de la casilla
+  const grosor = relieve ? Math.max(4, Math.round(celda * 0.10)) : 0;
   const [placed, setPlaced] = useState(Array.from({length:10}, () => Array(10).fill(null)));
   // Qué tenemos "en la mano": una pieza de la bandeja, o una ya puesta en el
   // tablero que queremos recolocar.
@@ -780,9 +830,9 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
                         width:"100%", height:"100%",
                         display:"flex", alignItems:"center", justifyContent:"center",
                       }}>
-                      <EnPie inclinacion={camara.inclinacion}>
+                      <EnPie inclinacion={camara.inclinacion} celda={celda}>
                         <PieceTile name={p} owner="mine" dim={cogida(r, c)}
-                                   relieve={relieve} elevada={cogida(r, c)} />
+                                   relieve={relieve} elevada={cogida(r, c)} grosor={grosor} />
                       </EnPie>
                     </div>
                   )}
@@ -982,6 +1032,8 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
   const relieve = camara.inclinacion > 0;
   const celda = camara.tamano;
   const [marcoRef, hueco] = useHuecoDeTablero(camara);
+  // espesor del bloque, proporcional al tamaño de la casilla
+  const grosor = relieve ? Math.max(4, Math.round(celda * 0.10)) : 0;
   const [board, setBoard]         = useState(initBoard);
   const [selCell, setSelCell]     = useState(null);
   const [validMoves, setValidMoves] = useState([]);
@@ -1223,15 +1275,15 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
                 "--dy": `${(deslizando.tr - deslizando.fr) * (celda + GAP)}px`,
                 animation:`deslizar ${DESLIZ_MS}ms cubic-bezier(0.33,0.9,0.35,1) forwards`,
               }}>
-                <EnPie inclinacion={camara.inclinacion}>
+                <EnPie inclinacion={camara.inclinacion} celda={celda}>
                   {deslizando.pieza.player === "human" || deslizando.pieza.revealed ? (
                     <PieceTile
                       name={deslizando.pieza.name}
                       owner={deslizando.pieza.player === "human" ? "mine" : "theirs"}
-                      relieve={relieve} elevada
+                      relieve={relieve} elevada grosor={grosor}
                     />
                   ) : (
-                    <HiddenTile relieve={relieve} />
+                    <HiddenTile relieve={relieve} grosor={grosor} />
                   )}
                 </EnPie>
               </div>
@@ -1276,17 +1328,17 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
                       )}
                       {lake && <Lake />}
                       {showPiece && (
-                        <EnPie inclinacion={camara.inclinacion}>
+                        <EnPie inclinacion={camara.inclinacion} celda={celda}>
                           <PieceTile name={piece.name} owner={isHuman ? "mine" : "theirs"}
-                                     relieve={relieve} elevada={sel2} />
+                                     relieve={relieve} elevada={sel2} grosor={grosor} />
                         </EnPie>
                       )}
                       {isAi && !piece.revealed && !luchando && !saliendo && (
-                        <EnPie inclinacion={camara.inclinacion}>
+                        <EnPie inclinacion={camara.inclinacion} celda={celda}>
                           <HiddenTile
                             movida={reglas.ayudas && piece.hasMoved}
                             salto={reglas.ayudas ? piece.maxSalto : 0}
-                            relieve={relieve}
+                            relieve={relieve} grosor={grosor}
                           />
                         </EnPie>
                       )}

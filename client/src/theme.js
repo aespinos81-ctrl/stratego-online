@@ -54,6 +54,10 @@ export const THEMES = {
       ink: "#3B2A18",
       inkSoft: "rgba(59, 42, 24, 0.65)",
       shadow: "0 2px 4px rgba(0,0,0,0.35)",
+      // Cantos de la ficha vista de pie: el de arriba recibe la luz, los
+      // laterales quedan en sombra. Son los que le dan espesor de verdad.
+      cantoAlto: "#EADCC0",
+      cantoLado: "#9C8158",
     },
     // Del rival, ya reveladas: fichas burdeos con tinta clara.
     theirs: {
@@ -62,6 +66,8 @@ export const THEMES = {
       ink: "#FBEFE2",
       inkSoft: "rgba(251, 239, 226, 0.7)",
       shadow: "0 2px 4px rgba(0,0,0,0.4)",
+      cantoAlto: "#B04A53",
+      cantoLado: "#5C1A22",
     },
     // Del rival, ocultas: el "dorso" de la ficha, sin información.
     hidden: {
@@ -69,6 +75,8 @@ export const THEMES = {
       border: "#4E1720",
       emblem: "rgba(217, 164, 65, 0.55)",
       pattern: "rgba(255, 220, 160, 0.07)",
+      cantoAlto: "#98363F",
+      cantoLado: "#4C151C",
     },
 
     // ── Latón: acentos, títulos y bordes nobles ──────────────────────────────
