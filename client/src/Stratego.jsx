@@ -1152,6 +1152,8 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
   const [bajas, setBajas]         = useState({ human: [], ai: [] });
   const [ultimoMov, setUltimoMov] = useState(null);   // última jugada de la IA
   const [deslizando, setDeslizando] = useState(null); // pieza viajando ahora mismo
+  const [arrastre, setArrastre]     = useState(null); // pieza que llevas con el cursor
+  const sueltaRef = useRef(0);                        // cuándo se soltó la última
 
   // Todos los temporizadores en marcha, para poder cancelarlos si el jugador
   // reinicia la partida a media animación.
@@ -1273,29 +1275,90 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
     }, 650);
   }
 
+  const puedoJugar = () =>
+    turn === "human" && !combat && !gameOver && !aiMoveAnim && !aiThinking && !deslizando;
+
+  function seleccionar(r, c) {
+    setSelCell([r, c]);
+    setValidMoves(getValidMoves(board, r, c, lagos, reglas));
+  }
+
+  // Ejecuta la jugada de la casilla seleccionada a (r,c). La usan por igual el
+  // clic y el arrastre.
+  function moverA(sr, sc, r, c) {
+    const res = applyMove(board, sr, sc, r, c);
+    setSelCell(null); setValidMoves([]);
+    setUltimoMov(null);            // al mover yo, se borra el rastro del rival
+    moverConAnimacion(board[sr][sc], res, sr, sc, r, c, () => doAiTurn(res.nb));
+  }
+
   function clickCell(r, c) {
-    if (turn !== "human" || combat || gameOver || aiMoveAnim || aiThinking || deslizando) return;
+    if (!puedoJugar()) return;
+    // Tras soltar una pieza arrastrada llega un clic de propina en la casilla
+    // de destino. Si no lo ignoráramos, volvería a seleccionar la pieza recién
+    // movida y parecería que se queda "pegada".
+    if (Date.now() - sueltaRef.current < 300) return;
+
     const piece = board[r][c];
     if (selCell) {
       const [sr, sc] = selCell;
-      if (validMoves.some(([mr,mc]) => mr===r && mc===c)) {
-        const res = applyMove(board, sr, sc, r, c);
-        setSelCell(null); setValidMoves([]);
-        setUltimoMov(null);          // al mover yo, se borra el rastro del rival
-        moverConAnimacion(board[sr][sc], res, sr, sc, r, c, () => doAiTurn(res.nb));
-      } else if (piece?.player === "human") {
-        setSelCell([r,c]);
-        setValidMoves(getValidMoves(board, r, c, lagos, reglas));
-      } else {
-        setSelCell(null); setValidMoves([]);
-      }
-    } else {
-      if (piece?.player === "human") {
-        setSelCell([r,c]);
-        setValidMoves(getValidMoves(board, r, c, lagos, reglas));
-      }
+      if (validMoves.some(([mr,mc]) => mr===r && mc===c)) { moverA(sr, sc, r, c); return; }
+      if (piece?.player === "human") { seleccionar(r, c); return; }
+      setSelCell(null); setValidMoves([]);
+      return;
     }
+    if (piece?.player === "human") seleccionar(r, c);
   }
+
+  // ── Arrastrar una pieza hasta su destino ─────────────────────────────────
+  // Se usa el puntero y no el arrastre nativo del navegador: así funciona
+  // igual con ratón y con el dedo, y podemos dibujar la pieza siguiendo al
+  // cursor en vez del fantasma gris que pinta el navegador.
+  function empezarArrastre(e, r, c) {
+    if (!puedoJugar()) return;
+    if (board[r][c]?.player !== "human") return;
+    if (e.button !== undefined && e.button !== 0) return;   // solo botón izquierdo
+    seleccionar(r, c);
+    setArrastre({ desde: [r, c], pieza: board[r][c], x: e.clientX, y: e.clientY, sobre: null });
+  }
+
+  useEffect(() => {
+    if (!arrastre) return;
+
+    const casillaBajo = (x, y) => {
+      const el = document.elementFromPoint(x, y);
+      const casilla = el && el.closest("[data-casilla]");
+      return casilla ? [Number(casilla.dataset.fila), Number(casilla.dataset.col)] : null;
+    };
+
+    const alMover = e => {
+      const sobre = casillaBajo(e.clientX, e.clientY);
+      setArrastre(a => (a ? { ...a, x: e.clientX, y: e.clientY, sobre } : a));
+    };
+
+    const alSoltar = e => {
+      const destino = casillaBajo(e.clientX, e.clientY);
+      const [sr, sc] = arrastre.desde;
+      setArrastre(null);
+      if (!destino) return;                       // soltada fuera del tablero
+      const [r, c] = destino;
+      if (r === sr && c === sc) return;           // devuelta a su sitio
+      if (validMoves.some(([mr, mc]) => mr === r && mc === c)) {
+        sueltaRef.current = Date.now();
+        moverA(sr, sc, r, c);
+      }
+      // Si el destino no vale, la pieza se queda seleccionada y no pasa nada.
+    };
+
+    window.addEventListener("pointermove", alMover);
+    window.addEventListener("pointerup", alSoltar);
+    window.addEventListener("pointercancel", alSoltar);
+    return () => {
+      window.removeEventListener("pointermove", alMover);
+      window.removeEventListener("pointerup", alSoltar);
+      window.removeEventListener("pointercancel", alSoltar);
+    };
+  }, [arrastre?.desde?.[0], arrastre?.desde?.[1], validMoves, board]);
 
   const isSel   = (r,c) => selCell && selCell[0]===r && selCell[1]===c;
   const isValid = (r,c) => validMoves.some(([mr,mc]) => mr===r && mc===c);
@@ -1380,15 +1443,23 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
                   const showPiece  = !luchando && !saliendo && (isHuman || (isAi && piece?.revealed));
                   const attackable = valid && piece?.player === "ai";
                   // Rastro de la última jugada del rival
+                  const encimaAlSoltar = arrastre && arrastre.sobre
+                    && arrastre.sobre[0] === r && arrastre.sobre[1] === c
+                    && validMoves.some(([mr, mc]) => mr === r && mc === c);
                   const rastroDe = reglas.ayudas && ultimoMov && ultimoMov.fr === r && ultimoMov.fc === c;
                   const rastroA  = reglas.ayudas && ultimoMov && ultimoMov.tr === r && ultimoMov.tc === c;
 
                   return (
-                    <div key={`${r}-${c}`} onClick={() => clickCell(r, c)}
+                    <div key={`${r}-${c}`}
+                      data-casilla data-fila={r} data-col={c}
+                      onClick={() => clickCell(r, c)}
+                      onPointerDown={e => empezarArrastre(e, r, c)}
                       style={{
+                        touchAction:"none",   // que el dedo arrastre la ficha, no la página
                         width:celda, height:celda, borderRadius:4,
                         background: lake ? T.lake : squareBg(r, c),
                         boxShadow: luchando ? `inset 0 0 0 3px ${T.brassBright}, 0 0 22px ${T.brassBright}77`
+                          : encimaAlSoltar ? `inset 0 0 0 4px ${T.brassBright}`
                           : sel2 ? `inset 0 0 0 3px ${T.select}`
                           : attackable ? `inset 0 0 0 3px ${T.capture}`
                           : rastroA ? `inset 0 0 0 2px ${T.brass}AA`
@@ -1408,7 +1479,8 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
                       {showPiece && (
                         <EnPie inclinacion={camara.inclinacion} celda={celda}>
                           <PieceTile name={piece.name} owner={isHuman ? "mine" : "theirs"}
-                                     relieve={relieve} elevada={sel2} grosor={grosor} celda={celda} />
+                                     relieve={relieve} elevada={sel2} grosor={grosor} celda={celda}
+                                     dim={arrastre && arrastre.desde[0] === r && arrastre.desde[1] === c} />
                         </EnPie>
                       )}
                       {isAi && !piece.revealed && !luchando && !saliendo && (
@@ -1467,6 +1539,22 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
         </div>
         </div>
       </div>
+
+      {/* La pieza que llevas cogida, siguiendo al cursor. Va plana y fuera del
+          espacio 3D del tablero: así se lee siempre igual de bien, esté el
+          tablero inclinado o no. */}
+      {arrastre && (
+        <div style={{
+          position:"fixed", zIndex:400, pointerEvents:"none",
+          left: arrastre.x, top: arrastre.y,
+          width: celda, height: celda * 1.05,
+          marginLeft: -celda / 2, marginTop: -celda * 0.75,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          filter:"drop-shadow(0 12px 14px rgba(0,0,0,0.55))",
+        }}>
+          <PieceTile name={arrastre.pieza.name} owner="mine" celda={celda} scale={1.06} />
+        </div>
+      )}
 
       {/* Panel lateral */}
       <div style={{ display:"flex", flexDirection:"column", gap:12, width:216, marginTop:38 }}>
