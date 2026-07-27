@@ -82,23 +82,51 @@ function resolveBattle(attName, defName) {
   return "both";
 }
 
-// ── Cuántas casillas puede recorrer cada pieza de una vez ────────────────────
-// Explorador: sin límite. Capitán o superior (rango 6+): hasta 2. El resto: 1.
-// Dar dos casillas a la oficialidad agiliza mucho la partida, y a cambio un
-// salto de 2 deja de ser la firma inconfundible del Explorador: ahora también
-// puede ser un oficial. Esa ambigüedad es deliberada.
-const ALCANCE_OFICIALES = 2;
-const RANGO_OFICIAL = 6;
+// ─── LOS DOS MODOS DE JUEGO ───────────────────────────────────────────────────
+// Aquí está TODA la diferencia entre el Stratego de siempre y el nuestro. Cada
+// modo es un puñado de interruptores; el resto del código los consulta y se
+// comporta en consecuencia.
+const RANGO_OFICIAL = 6;   // Capitán y por encima
 
-const alcanceDe = name =>
+export const MODOS = {
+  clasico: {
+    nombre: "Stratego clásico",
+    lema: "Las reglas de toda la vida",
+    puntos: [
+      "Solo el Explorador recorre varias casillas; el resto avanza de una en una",
+      "Los dos lagos de 2×2 del tablero original, siempre en el mismo sitio",
+      "Sin ayudas: lo que deduzcas sale de tu memoria, como en la mesa",
+    ],
+    reglas: { alcanceOficiales: 1, aguaConfigurable: false, ayudas: false },
+  },
+  moderno: {
+    nombre: "Stratego 2.0",
+    lema: "Más rápido y más deductivo",
+    puntos: [
+      "Del Capitán para arriba se mueven hasta dos casillas",
+      "Zonas de agua a elegir: clásica, reducida, sorteada o ninguna",
+      "El tablero recuerda por ti: rastro de jugadas y marcas de deducción",
+    ],
+    reglas: { alcanceOficiales: 2, aguaConfigurable: true, ayudas: true },
+  },
+};
+
+const REGLAS_POR_DEFECTO = MODOS.clasico.reglas;
+
+// ── Cuántas casillas puede recorrer cada pieza de una vez ────────────────────
+// El Explorador nunca tiene límite. La oficialidad depende del modo: una casilla
+// en el clásico, dos en el 2.0. Ojo al efecto secundario en el 2.0: un salto de
+// dos deja de ser la firma inconfundible del Explorador, porque también puede
+// ser un oficial. Esa ambigüedad es deliberada.
+const alcanceDe = (name, reglas = REGLAS_POR_DEFECTO) =>
   name === "Scout" ? Infinity
-  : PIECES[name].rank >= RANGO_OFICIAL ? ALCANCE_OFICIALES
+  : PIECES[name].rank >= RANGO_OFICIAL ? reglas.alcanceOficiales
   : 1;
 
-function getValidMoves(board, row, col, lagos) {
+function getValidMoves(board, row, col, lagos, reglas = REGLAS_POR_DEFECTO) {
   const piece = board[row][col];
   if (!piece || piece.name === "Bomb" || piece.name === "Flag") return [];
-  const alcance = alcanceDe(piece.name);
+  const alcance = alcanceDe(piece.name, reglas);
   const moves = [];
   for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
     let r = row + dr, c = col + dc, pasos = 1;
@@ -125,13 +153,13 @@ function aiSetup(lagos) {
   return board;
 }
 
-function aiMove(board, lagos) {
+function aiMove(board, lagos, reglas) {
   const moves = [];
   for (let r = 0; r < 10; r++)
     for (let c = 0; c < 10; c++) {
       const p = board[r][c];
       if (p?.player !== "ai") continue;
-      for (const [tr, tc] of getValidMoves(board, r, c, lagos)) {
+      for (const [tr, tc] of getValidMoves(board, r, c, lagos, reglas)) {
         const t = board[tr][tc];
         let score = (tr - r) * 4;
         if (t?.player === "human") {
@@ -151,11 +179,11 @@ function aiMove(board, lagos) {
   return moves.slice(0, Math.min(6, moves.length))[Math.floor(Math.random() * Math.min(6, moves.length))];
 }
 
-function checkWinner(board, lagos) {
+function checkWinner(board, lagos, reglas) {
   const hFlag = board.flat().some(p => p?.name === "Flag" && p?.player === "human");
   const aFlag = board.flat().some(p => p?.name === "Flag" && p?.player === "ai");
-  const hMoves = board.some((row, r) => row.some((_, c) => board[r][c]?.player === "human" && getValidMoves(board, r, c, lagos).length > 0));
-  const aMoves = board.some((row, r) => row.some((_, c) => board[r][c]?.player === "ai"   && getValidMoves(board, r, c, lagos).length > 0));
+  const hMoves = board.some((row, r) => row.some((_, c) => board[r][c]?.player === "human" && getValidMoves(board, r, c, lagos, reglas).length > 0));
+  const aMoves = board.some((row, r) => row.some((_, c) => board[r][c]?.player === "ai"   && getValidMoves(board, r, c, lagos, reglas).length > 0));
   if (!aFlag || !aMoves) return "human";
   if (!hFlag || !hMoves) return "ai";
   return null;
@@ -344,7 +372,7 @@ const PanelTitle = ({ children }) => (
 );
 
 // ─── FASE DE DESPLIEGUE ───────────────────────────────────────────────────────
-function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua }) {
+function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVolver }) {
   const [placed, setPlaced] = useState(Array.from({length:10}, () => Array(10).fill(null)));
   // Qué tenemos "en la mano": una pieza de la bandeja, o una ya puesta en el
   // tablero que queremos recolocar.
@@ -467,6 +495,20 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua }) {
 
   return (
     <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:16, fontFamily:FONTS.ui }}>
+      {/* Modo en el que se va a jugar, con salida a la pantalla de inicio */}
+      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+        <span style={{
+          padding:"4px 12px", borderRadius:20,
+          background:T.brassFaint, border:`1px solid ${T.brassSoft}`,
+          color:T.brassBright, fontSize:11.5, fontWeight:700,
+        }}>{MODOS[modo].nombre}</span>
+        <button onClick={onVolver} style={{
+          background:"none", border:"none", padding:0,
+          color:T.textSoft, fontFamily:FONTS.ui, fontSize:11.5,
+          cursor:"pointer", textDecoration:"underline",
+        }}>cambiar de modo</button>
+      </div>
+
       <div style={{ textAlign:"center" }}>
         <div style={{ color:T.brass, fontSize:14, fontWeight:700, letterSpacing:0.3 }}>
           Coloca tus 40 piezas en las cuatro filas de abajo
@@ -512,8 +554,11 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua }) {
         })}
       </div>
 
-      {/* Selector de zonas de agua */}
-      <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", justifyContent:"center" }}>
+      {/* Selector de zonas de agua · solo en 2.0 */}
+      <div style={{
+        display: reglas.aguaConfigurable ? "flex" : "none",
+        alignItems:"center", gap:8, flexWrap:"wrap", justifyContent:"center",
+      }}>
         <span style={{ fontSize:11, color:T.textSoft, letterSpacing:1.4, fontWeight:700, textTransform:"uppercase" }}>
           Agua
         </span>
@@ -787,7 +832,7 @@ function AiMoveArrow({ aiMoveAnim }) {
 }
 
 // ─── TABLERO DE JUEGO ─────────────────────────────────────────────────────────
-function GameBoard({ board: initBoard, onReset, lagos }) {
+function GameBoard({ board: initBoard, onReset, lagos, reglas }) {
   const [board, setBoard]         = useState(initBoard);
   const [selCell, setSelCell]     = useState(null);
   const [validMoves, setValidMoves] = useState([]);
@@ -875,7 +920,7 @@ function GameBoard({ board: initBoard, onReset, lagos }) {
       setBoard(nb);
       if (mensaje) addLog(mensaje);
       anotarBajas(caidas);
-      const winner = checkWinner(nb, lagos);
+      const winner = checkWinner(nb, lagos, reglas);
       if (winner) { setGameOver(winner); return; }
       despues();
     }, COMBATE_REVELAR + COMBATE_DESTRUIR);
@@ -885,7 +930,7 @@ function GameBoard({ board: initBoard, onReset, lagos }) {
     setTurn("ai");
     setAiThinking(true);
     programar(() => {
-      const move = aiMove(b, lagos);
+      const move = aiMove(b, lagos, reglas);
       if (!move) { setTurn("human"); setAiThinking(false); return; }
       setAiThinking(false);
       setAiMoveAnim({ ...move });
@@ -894,15 +939,17 @@ function GameBoard({ board: initBoard, onReset, lagos }) {
         const res = applyMove(b, move.fr, move.fc, move.tr, move.tc);
         setAiMoveAnim(null);
         // Rastro de la jugada del rival: casillas marcadas y línea en el registro
-        setUltimoMov({ fr: move.fr, fc: move.fc, tr: move.tr, tc: move.tc });
-        addLog(`IA · ${coord(move.fr, move.fc)} → ${coord(move.tr, move.tc)}` +
-               (res.distancia > 1 ? ` · ${res.distancia} casillas` : ""));
+        if (reglas.ayudas) {
+          setUltimoMov({ fr: move.fr, fc: move.fc, tr: move.tr, tc: move.tc });
+          addLog(`IA · ${coord(move.fr, move.fc)} → ${coord(move.tr, move.tc)}` +
+                 (res.distancia > 1 ? ` · ${res.distancia} casillas` : ""));
+        }
         if (res.battleInfo) {
           escenificarCombate(res, move.fr, move.fc, move.tr, move.tc, () => setTurn("human"));
           return;
         }
         setBoard(res.nb);
-        const winner = checkWinner(res.nb, lagos);
+        const winner = checkWinner(res.nb, lagos, reglas);
         if (winner) { setGameOver(winner); return; }
         setTurn("human");
       }, 950);
@@ -923,19 +970,19 @@ function GameBoard({ board: initBoard, onReset, lagos }) {
           return;
         }
         setBoard(res.nb);
-        const winner = checkWinner(res.nb, lagos);
+        const winner = checkWinner(res.nb, lagos, reglas);
         if (winner) { setGameOver(winner); return; }
         doAiTurn(res.nb);
       } else if (piece?.player === "human") {
         setSelCell([r,c]);
-        setValidMoves(getValidMoves(board, r, c, lagos));
+        setValidMoves(getValidMoves(board, r, c, lagos, reglas));
       } else {
         setSelCell(null); setValidMoves([]);
       }
     } else {
       if (piece?.player === "human") {
         setSelCell([r,c]);
-        setValidMoves(getValidMoves(board, r, c, lagos));
+        setValidMoves(getValidMoves(board, r, c, lagos, reglas));
       }
     }
   }
@@ -1017,8 +1064,8 @@ function GameBoard({ board: initBoard, onReset, lagos }) {
                   const showPiece  = !luchando && (isHuman || (isAi && piece?.revealed));
                   const attackable = valid && piece?.player === "ai";
                   // Rastro de la última jugada del rival
-                  const rastroDe = ultimoMov && ultimoMov.fr === r && ultimoMov.fc === c;
-                  const rastroA  = ultimoMov && ultimoMov.tr === r && ultimoMov.tc === c;
+                  const rastroDe = reglas.ayudas && ultimoMov && ultimoMov.fr === r && ultimoMov.fc === c;
+                  const rastroA  = reglas.ayudas && ultimoMov && ultimoMov.tr === r && ultimoMov.tc === c;
 
                   return (
                     <div key={`${r}-${c}`} onClick={() => clickCell(r, c)}
@@ -1043,7 +1090,10 @@ function GameBoard({ board: initBoard, onReset, lagos }) {
                       {lake && <Lake />}
                       {showPiece && <PieceTile name={piece.name} owner={isHuman ? "mine" : "theirs"} />}
                       {isAi && !piece.revealed && !luchando && (
-                        <HiddenTile movida={piece.hasMoved} salto={piece.maxSalto} />
+                        <HiddenTile
+                          movida={reglas.ayudas && piece.hasMoved}
+                          salto={reglas.ayudas ? piece.maxSalto : 0}
+                        />
                       )}
                     </div>
                   );
@@ -1083,7 +1133,8 @@ function GameBoard({ board: initBoard, onReset, lagos }) {
           {[
             ["Spy", "Mata al Marshal si ataca"],
             ["Scout", "Avanza sin límite en línea recta"],
-            ["Captain", "Capitán o superior: hasta 2 casillas"],
+            ...(reglas.alcanceOficiales > 1
+              ? [["Captain", "Capitán o superior: hasta 2 casillas"]] : []),
             ["Miner", "Desactiva las bombas"],
             ["Bomb", "Inmóvil y mortal"],
             ["Flag", "Captúrala para ganar"],
@@ -1122,8 +1173,100 @@ function GameBoard({ board: initBoard, onReset, lagos }) {
   );
 }
 
+// ─── PANTALLA DE INICIO ───────────────────────────────────────────────────────
+// Lo primero que se ve: elegir con qué reglas se juega. Cada tarjeta dice sin
+// rodeos en qué se diferencia del otro modo, para poder elegir sabiendo.
+function TarjetaModo({ id, modo, onElegir }) {
+  const [encima, setEncima] = useState(false);
+  const esModerno = id === "moderno";
+  return (
+    <button
+      onClick={() => onElegir(id)}
+      onMouseEnter={() => setEncima(true)}
+      onMouseLeave={() => setEncima(false)}
+      style={{
+        width:300, textAlign:"left", cursor:"pointer",
+        padding:"22px 22px 20px",
+        borderRadius:14,
+        background: encima ? "rgba(52,29,13,0.96)" : T.panelBg,
+        border:`2px solid ${encima ? T.brass : T.panelBorder}`,
+        boxShadow: encima
+          ? `0 14px 34px rgba(0,0,0,0.5), inset 0 0 0 1px ${T.brassSoft}`
+          : "0 8px 22px rgba(0,0,0,0.35)",
+        transform: encima ? "translateY(-3px)" : "none",
+        transition:"all 0.16s ease",
+        fontFamily:FONTS.ui,
+      }}>
+      {/* Fichas de muestra, para que se vea de qué va cada modo */}
+      <div style={{ display:"flex", gap:6, marginBottom:14 }}>
+        {(esModerno ? ["Marshal","Captain","Scout","Bomb"] : ["Marshal","Scout","Miner","Flag"])
+          .map(n => <MiniFicha key={n} name={n} size={30} />)}
+      </div>
+
+      <div style={{ fontSize:19, fontWeight:800, color:T.brassBright, letterSpacing:0.2 }}>
+        {modo.nombre}
+      </div>
+      <div style={{ fontSize:12.5, color:T.brass, marginTop:3, marginBottom:14 }}>
+        {modo.lema}
+      </div>
+
+      <ul style={{ margin:0, padding:0, listStyle:"none" }}>
+        {modo.puntos.map((p, i) => (
+          <li key={i} style={{
+            display:"flex", gap:8, alignItems:"flex-start",
+            fontSize:12, color:T.textSoft, lineHeight:1.4, marginBottom:8,
+          }}>
+            <span style={{ color:T.brass, flexShrink:0 }}>▪</span>
+            <span>{p}</span>
+          </li>
+        ))}
+      </ul>
+
+      <div style={{
+        marginTop:16, padding:"9px 0", textAlign:"center", borderRadius:8,
+        background: encima ? `linear-gradient(160deg, ${T.brassBright}, ${T.brass})` : "rgba(247,238,221,0.06)",
+        border: encima ? "none" : `1px solid ${T.brassSoft}`,
+        color: encima ? "#3B2A18" : T.brass,
+        fontSize:13, fontWeight:700, letterSpacing:0.4,
+        transition:"all 0.16s ease",
+      }}>
+        Jugar
+      </div>
+    </button>
+  );
+}
+
+function PantallaInicio({ onElegir }) {
+  return (
+    <div style={{
+      display:"flex", flexDirection:"column", alignItems:"center",
+      gap:26, fontFamily:FONTS.ui, paddingTop:10,
+    }}>
+      <p style={{
+        margin:0, color:T.textSoft, fontSize:13.5, textAlign:"center",
+        maxWidth:520, lineHeight:1.5,
+      }}>
+        Dos formas de jugar la misma batalla. Elige con qué reglas quieres
+        empezar; podrás cambiar de modo cuando quieras.
+      </p>
+
+      <div style={{ display:"flex", gap:20, flexWrap:"wrap", justifyContent:"center" }}>
+        {Object.entries(MODOS).map(([id, modo]) => (
+          <TarjetaModo key={id} id={id} modo={modo} onElegir={onElegir} />
+        ))}
+      </div>
+
+      <p style={{ margin:0, color:T.textDim, fontSize:11.5, textAlign:"center" }}>
+        En ambos modos juegas contra la máquina · el multijugador está en construcción
+      </p>
+    </div>
+  );
+}
+
 // ─── RAÍZ ─────────────────────────────────────────────────────────────────────
 export default function Stratego() {
+  // Mientras no haya modo elegido, se enseña la pantalla de inicio
+  const [modo, setModo] = useState(null);
   const [phase, setPhase] = useState("setup");
   const [gameBoard, setGameBoard] = useState(null);
 
@@ -1131,6 +1274,24 @@ export default function Stratego() {
   // aquí arriba porque tiene que sobrevivir al paso de despliegue a partida.
   const [aguaId, setAguaId] = useState("clasica");
   const [lagos, setLagos] = useState(() => crearLagos("clasica"));
+
+  const reglas = MODOS[modo]?.reglas ?? REGLAS_POR_DEFECTO;
+
+  // Al elegir modo se empieza de cero, con el agua clásica: en el modo clásico
+  // no hay otra, y en el 2.0 es el punto de partida antes de tocar el selector.
+  function elegirModo(id) {
+    setModo(id);
+    setAguaId("clasica");
+    setLagos(crearLagos("clasica"));
+    setGameBoard(null);
+    setPhase("setup");
+  }
+
+  function volverAlInicio() {
+    setModo(null);
+    setGameBoard(null);
+    setPhase("setup");
+  }
 
   // Volver a pulsar "Aleatoria" vuelve a sortear
   function cambiarAgua(id) {
@@ -1218,15 +1379,18 @@ export default function Stratego() {
         <div className="titulo-stratego">STRATEGO</div>
       </div>
 
-      {phase === "setup" && (
+      {!modo && <PantallaInicio onElegir={elegirModo} />}
+
+      {modo && phase === "setup" && (
         <SetupPhase
           onReady={b => { setGameBoard(b); setPhase("game"); }}
           lagos={lagos} aguaId={aguaId} onCambiarAgua={cambiarAgua}
+          reglas={reglas} modo={modo} onVolver={volverAlInicio}
         />
       )}
-      {phase === "game" && gameBoard && (
+      {modo && phase === "game" && gameBoard && (
         <GameBoard
-          board={gameBoard} lagos={lagos}
+          board={gameBoard} lagos={lagos} reglas={reglas}
           onReset={() => { setGameBoard(null); setPhase("setup"); }}
         />
       )}

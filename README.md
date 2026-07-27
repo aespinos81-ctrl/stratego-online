@@ -159,6 +159,30 @@ de los dolores de cabeza.
 
 ---
 
+## 🎮 Los dos modos de juego
+
+Al abrir el juego se elige con qué reglas jugar. La diferencia está definida en
+un solo sitio, la constante `MODOS` de `client/src/Stratego.jsx`, y todo lo demás
+la consulta:
+
+| | Stratego clásico | Stratego 2.0 |
+|---|---|---|
+| Movimiento | Solo el Explorador recorre varias casillas | + del Capitán para arriba, hasta 2 |
+| Zonas de agua | Las clásicas, fijas | A elegir: clásica, reducida, sorteada o ninguna |
+| Marcas de deducción | No | Sí: rastro de la última jugada y marcas por el salto visto |
+| Cementerio | Sí | Sí |
+
+El cementerio está en los dos porque no es una ayuda añadida: en una partida de
+mesa las piezas capturadas se dejan a la vista. Lo que sí es ayuda —y por eso
+solo aparece en el 2.0— es que el tablero **recuerde por ti** qué piezas se han
+movido y cuánto.
+
+> ⚠️ Pendiente para el multijugador: el modo tiene que fijarse al crear la sala y
+> guardarse en `Game`, igual que se hizo con las zonas de agua. Hoy `shared/rules.js`
+> aplica siempre el alcance del 2.0.
+
+---
+
 ## ⚖️ Estado de las reglas
 
 **Ya implementadas y con tests** (`npm test`):
