@@ -190,6 +190,92 @@ function checkWinner(board, lagos, reglas) {
   return null;
 }
 
+
+// ─── ICONOS DE PIEZA ──────────────────────────────────────────────────────────
+// Cada pieza tiene su propio dibujo, para reconocerla sin leer el número. Dos
+// familias:
+//   · La escala de mando se dibuja con su DIVISA (estrellas, barras, galones).
+//     Contar formas es más rápido que leer "VIII", y es como funcionan las
+//     divisas de verdad.
+//   · Las piezas con oficio propio llevan su HERRAMIENTA: prismáticos el
+//     explorador, pico el minero, un ojo el espía, la mina, la bandera.
+// Todo va con trazo grueso y pocas formas: tienen que aguantar a 46 píxeles.
+
+const ESTRELLA = "M0,-7.4 L2.1,-2.3 L7.4,-2.3 L3.2,1 L4.6,6.3 L0,3.1 L-4.6,6.3 L-3.2,1 L-7.4,-2.3 L-2.1,-2.3 Z";
+
+const estrellas = posiciones => (
+  <>{posiciones.map(([x, y], i) => (
+    <path key={i} d={ESTRELLA} transform={`translate(${x},${y})`} fill="currentColor" stroke="none" />
+  ))}</>
+);
+
+const barras = ys => (
+  <>{ys.map((y, i) => (
+    <rect key={i} x="7" y={y} width="26" height="5" rx="1.8" fill="currentColor" stroke="none" />
+  ))}</>
+);
+
+const galones = ys => (
+  <>{ys.map((y, i) => (
+    <path key={i} d={`M7 ${y} L20 ${y - 9} L33 ${y}`} fill="none"
+          stroke="currentColor" strokeWidth="4.6" strokeLinecap="round" strokeLinejoin="round" />
+  ))}</>
+);
+
+const DIBUJOS = {
+  // ── escala de mando ──
+  Marshal:    estrellas([[12,12],[28,12],[12,28],[28,28]]),   // cuatro, en cuadro
+  General:    estrellas([[20,11],[12,27],[28,27]]),           // tres, en triángulo
+  Colonel:    estrellas([[11,20],[29,20]]),                   // dos
+  Major:      estrellas([[20,20]]),                           // una
+  Captain:    barras([9, 18, 27]),
+  Lieutenant: barras([13.5, 23.5]),
+  Sergeant:   galones([16, 25, 34]),
+
+  // ── piezas con oficio ──
+  Miner: (   // pico
+    <g fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round">
+      <path d="M11 33 L27 15" />
+      <path d="M15 13 C22 8, 31 10, 35 17" strokeWidth="4.4" />
+      <path d="M19 9 L24 20" strokeWidth="3.4" />
+    </g>
+  ),
+  Scout: (   // prismáticos
+    <g fill="none" stroke="currentColor" strokeWidth="3.8">
+      <circle cx="13" cy="26" r="7.5" />
+      <circle cx="27" cy="26" r="7.5" />
+      <path d="M13 18 V10 h5 M27 18 V10 h-5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M18.5 26 h3" strokeLinecap="round" />
+    </g>
+  ),
+  Spy: (     // ojo
+    <g fill="none" stroke="currentColor" strokeWidth="3.6">
+      <path d="M5 20 C11 11, 15.5 8, 20 8 C24.5 8, 29 11, 35 20 C29 29, 24.5 32, 20 32 C15.5 32, 11 29, 5 20 Z" />
+      <circle cx="20" cy="20" r="4.6" fill="currentColor" stroke="none" />
+    </g>
+  ),
+  Bomb: (    // mina, con sus púas
+    <g stroke="currentColor" strokeWidth="3.6" strokeLinecap="round">
+      <circle cx="20" cy="22" r="9.5" fill="currentColor" stroke="none" />
+      <path d="M20 5 v5 M31.5 10.5 l-3.5 3.5 M8.5 10.5 l3.5 3.5 M3 22 h5 M37 22 h-5" fill="none" />
+    </g>
+  ),
+  Flag: (    // bandera
+    <g stroke="currentColor" strokeWidth="4" strokeLinecap="round">
+      <path d="M12 35 V6" fill="none" />
+      <path d="M12 8 H32 l-4.5 6.5 L32 21 H12 Z" fill="currentColor" stroke="none" />
+    </g>
+  ),
+};
+
+function Icono({ name, size }) {
+  return (
+    <svg viewBox="0 0 40 40" width={size} height={size} style={{ display:"block", color:"inherit" }}>
+      {DIBUJOS[name]}
+    </svg>
+  );
+}
+
 // ─── FICHA ────────────────────────────────────────────────────────────────────
 // `owner` es "mine" (hueso) o "theirs" (burdeos). La identidad se lee con la
 // cifra grande; la barra de color del pie ayuda a agrupar rangos de un vistazo.
@@ -234,7 +320,7 @@ function relieveDe(color, alturaPx, elevada) {
   return [...capas, sombra].join(", ");
 }
 
-function PieceTile({ name, owner = "mine", scale = 1, dim = false, relieve = false, elevada = false, grosor = 0 }) {
+function PieceTile({ name, owner = "mine", scale = 1, dim = false, relieve = false, elevada = false, grosor = 0, celda = 0 }) {
   const skin = owner === "mine" ? T.mine : T.theirs;
   const d = PIECES[name];
   return (
@@ -257,12 +343,27 @@ function PieceTile({ name, owner = "mine", scale = 1, dim = false, relieve = fal
       alignItems:"center", justifyContent:"center",
       overflow:"hidden",
     }}>
-      <Insignia name={name} color={skin.inkSoft} scale={scale} />
+      {/* El dibujo manda: es lo que identifica la pieza de un vistazo */}
+      <span style={{ color:skin.ink, display:"block" }}>
+        <Icono name={name} size={Math.round(30 * scale)} />
+      </span>
+
+      {/* El número queda de apoyo, en la esquina, para quien prefiera leerlo */}
       <span style={{
-        fontFamily:FONTS.rank, fontSize:27 * scale * escalaNumeral(d.display),
-        fontWeight:700, color:skin.ink, lineHeight:0.95, letterSpacing:0.5,
-        marginTop: 5 * scale,   // deja sitio a la insignia de arriba
+        position:"absolute", top:2.5 * scale, right:4 * scale,
+        fontFamily:FONTS.rank, fontWeight:700, letterSpacing:0.3,
+        fontSize: 11.5 * scale, lineHeight:1, color:skin.inkSoft,
       }}>{d.display}</span>
+
+      {/* Y el nombre al pie, que es lo que enseña a asociar dibujo y pieza.
+          Solo si la ficha da de sí: por debajo de cierto tamaño estorba. */}
+      {celda >= 56 && (
+        <span style={{
+          position:"absolute", bottom:5.5 * scale, left:0, width:"100%",
+          textAlign:"center", fontSize:7.5 * scale, fontWeight:700,
+          letterSpacing:0.4, textTransform:"uppercase", color:skin.inkSoft,
+        }}>{d.label}</span>
+      )}
       <div style={{
         position:"absolute", bottom:0, left:0, width:"100%", height:4,
         background:rankAccent(name),
@@ -284,11 +385,9 @@ function MiniFicha({ name, owner = "mine", size = 24, apagada = false }) {
       display:"inline-flex", alignItems:"center", justifyContent:"center",
       position:"relative", overflow:"hidden",
     }}>
-      <span style={{
-        fontFamily:FONTS.rank, fontWeight:600, letterSpacing:0.3,
-        fontSize: size * 0.62 * escalaNumeral(d.display),
-        color: apagada ? T.textDim : skin.ink, marginBottom:1,
-      }}>{d.display}</span>
+      <span style={{ color: apagada ? T.textDim : skin.ink, display:"block", marginBottom:1 }}>
+        <Icono name={name} size={Math.round(size * 0.66)} />
+      </span>
       <span style={{
         position:"absolute", bottom:0, left:0, width:"100%",
         height: Math.max(2, size * 0.11),
@@ -439,7 +538,7 @@ function Cementerio({ bajas, etiqueta, owner }) {
             <div key={name}
               title={`${PIECES[name].label}: ${caidos} de ${cuantos} ${caidos === 1 ? "caído" : "caídos"}`}
               style={{ display:"flex", alignItems:"center", gap:4, opacity: ninguna ? 0.38 : 1 }}>
-              <MiniFicha name={name} owner={owner} size={18} apagada={ninguna} />
+              <MiniFicha name={name} owner={owner} size={22} apagada={ninguna} />
               <span style={{
                 fontFamily:FONTS.ui, fontSize:10.5,
                 color: todas ? T.brassBright : T.textSoft,
@@ -832,7 +931,7 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
                       }}>
                       <EnPie inclinacion={camara.inclinacion} celda={celda}>
                         <PieceTile name={p} owner="mine" dim={cogida(r, c)}
-                                   relieve={relieve} elevada={cogida(r, c)} grosor={grosor} />
+                                   relieve={relieve} elevada={cogida(r, c)} grosor={grosor} celda={celda} />
                       </EnPie>
                     </div>
                   )}
@@ -1280,7 +1379,7 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
                     <PieceTile
                       name={deslizando.pieza.name}
                       owner={deslizando.pieza.player === "human" ? "mine" : "theirs"}
-                      relieve={relieve} elevada grosor={grosor}
+                      relieve={relieve} elevada grosor={grosor} celda={celda}
                     />
                   ) : (
                     <HiddenTile relieve={relieve} grosor={grosor} />
@@ -1330,7 +1429,7 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
                       {showPiece && (
                         <EnPie inclinacion={camara.inclinacion} celda={celda}>
                           <PieceTile name={piece.name} owner={isHuman ? "mine" : "theirs"}
-                                     relieve={relieve} elevada={sel2} grosor={grosor} />
+                                     relieve={relieve} elevada={sel2} grosor={grosor} celda={celda} />
                         </EnPie>
                       )}
                       {isAi && !piece.revealed && !luchando && !saliendo && (
