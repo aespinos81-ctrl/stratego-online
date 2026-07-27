@@ -990,44 +990,58 @@ const DESLIZ_MS = 260;            // lo que tarda una pieza en recorrer su jugad
 const COMBATE_REVELAR  = 750;   // ms mostrando las dos fichas frente a frente
 const COMBATE_DESTRUIR = 600;   // ms de la ruptura de la perdedora
 
-// Una de las dos fichas del choque
-function Combatiente({ piece, cae, gana }) {
-  // La animación de entrada va sin retardo y sin `fill-mode`: así, si por lo que
-  // sea se reiniciara, la ficha se queda visible en su estado normal en vez de
-  // desaparecer. Con `both` bastaba un reinicio para dejarla en opacidad cero.
+// Una de las dos fichas del choque. Va de pie sobre la casilla, como cualquier
+// otra ficha, y desplazada a un lado para quedar cara a cara con su rival.
+// El contragiro y la animación van en capas distintas a propósito: una
+// animación reemplaza la propiedad `transform` entera, así que si compartieran
+// elemento, al empezar a caer la ficha perdería el contragiro y se tumbaría de
+// golpe sobre el tablero.
+function Combatiente({ piece, lado, cae, gana, inclinacion, celda, grosor }) {
+  const dx = lado === "izq" ? "-26%" : "26%";
+  const animacion = cae  ? `caerAtras ${COMBATE_DESTRUIR}ms cubic-bezier(0.5,0,0.75,0) forwards`
+                    : gana ? `avanzarCentro ${COMBATE_DESTRUIR}ms cubic-bezier(0.3,0.9,0.4,1) forwards`
+                    : `embestir 320ms cubic-bezier(0.34,1.3,0.6,1)`;
   return (
     <div style={{
-      width:56, height:56, position:"relative",
-      display:"flex", alignItems:"center", justifyContent:"center",
-      animation: cae ? `romper ${COMBATE_DESTRUIR}ms ease-in forwards`
-               : gana ? "vencer 400ms ease-out"
-               : "entrarChoque 260ms cubic-bezier(0.34,1.56,0.64,1)",
+      position:"absolute", left:"6%", bottom:"8%",
+      width:"88%", height: celda * 1.12,
+      transform:`rotateX(${-inclinacion}deg)`,
+      transformOrigin:"50% 100%",
+      transformStyle:"preserve-3d",
     }}>
-      <PieceTile name={piece.name} owner={piece.player === "human" ? "mine" : "theirs"} scale={1.12} />
-      {/* chispas de la ruptura */}
-      {cae && [0,1,2,3,4,5].map(i => (
-        <span key={i} style={{
-          position:"absolute", left:"50%", top:"50%",
-          width:6, height:6, marginLeft:-3, marginTop:-3,
-          borderRadius:"50%", background: i % 2 ? T.brassBright : T.capture,
-          "--a": `${i * 60}deg`,      // dirección en la que sale cada chispa
-          animation:`chispa ${COMBATE_DESTRUIR}ms ease-out ${60 + i*18}ms forwards`,
-        }}/>
-      ))}
+      <div style={{
+        width:"100%", height:"100%", position:"relative",
+        transformOrigin:"50% 100%", transformStyle:"preserve-3d",
+        "--dx": dx,
+        transform:`translateX(${dx})`,
+        animation: animacion,
+      }}>
+        <PieceTile
+          name={piece.name}
+          owner={piece.player === "human" ? "mine" : "theirs"}
+          grosor={grosor} celda={celda}
+        />
+        {/* chispas de la ficha que se rompe */}
+        {cae && [0,1,2,3,4,5].map(i => (
+          <span key={i} style={{
+            position:"absolute", left:"50%", top:"45%",
+            width:6, height:6, marginLeft:-3, marginTop:-3,
+            borderRadius:"50%", background: i % 2 ? T.brassBright : T.capture,
+            "--a": `${i * 60}deg`,
+            animation:`chispa ${COMBATE_DESTRUIR}ms ease-out ${40 + i*16}ms forwards`,
+          }}/>
+        ))}
+      </div>
     </div>
   );
 }
 
-function CombatOverlay({ combat, celda }) {
+// El combate ocurre EN la casilla atacada, no en un cartel aparte: las dos
+// fichas se plantan ahí, se embisten, y la que pierde cae hacia atrás mientras
+// la ganadora ocupa el centro.
+function CombatOverlay({ combat, celda, inclinacion, grosor }) {
   if (!combat) return null;
   const { r, c, attacker, defender, result, fase } = combat;
-  const ANCHO_ESCENA = 120;
-  const anchoTablero = 10 * celda + 9 * GAP;
-  const cx = c * (celda + GAP) + celda / 2;
-  const cy = r * (celda + GAP) + celda / 2;
-  // Si el combate cae en una columna del borde, pegamos la escena al tablero
-  // para que no se salga por fuera del marco.
-  const izquierda = Math.max(0, Math.min(cx - ANCHO_ESCENA / 2, anchoTablero - ANCHO_ESCENA));
 
   const cae = quien =>
     fase === "destruir" &&
@@ -1038,32 +1052,25 @@ function CombatOverlay({ combat, celda }) {
 
   return (
     <div style={{
-      position:"absolute", zIndex:20, pointerEvents:"none",
-      left: izquierda, top: cy - 32,
-      width: ANCHO_ESCENA, height:64,
-      display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+      position:"absolute", pointerEvents:"none",
+      left: c * (celda + GAP), top: r * (celda + GAP),
+      width: celda, height: celda,
+      transformStyle:"preserve-3d",
     }}>
-      {/* Fondo oscuro: despega la escena de las casillas de alrededor. Sin
-          animación a propósito: al cambiar de fase se reiniciaría y se quedaría
-          congelado en su primer fotograma, es decir, invisible. */}
-      <div style={{
-        position:"absolute", inset:0, borderRadius:12,
-        background:"rgba(28,14,4,0.72)",
-        border:`1px solid ${T.brassSoft}`,
-        boxShadow:"0 6px 20px rgba(0,0,0,0.5)",
-      }}/>
-      {/* Destello del impacto: solo existe mientras se destapan las fichas */}
+      {/* destello del impacto, sobre la propia casilla */}
       {fase === "revelar" && (
-        <div style={{
+        <span style={{
           position:"absolute", left:"50%", top:"50%",
-          width:70, height:70, marginLeft:-35, marginTop:-35,
+          width:celda, height:celda, marginLeft:-celda/2, marginTop:-celda/2,
           borderRadius:"50%",
-          background:`radial-gradient(circle, ${T.brassBright}66 0%, transparent 70%)`,
-          animation:"destello 500ms ease-out forwards",
+          background:`radial-gradient(circle, ${T.brassBright}88 0%, transparent 68%)`,
+          animation:"destello 520ms ease-out forwards",
         }}/>
       )}
-      <Combatiente piece={attacker} cae={cae("att")} gana={gana("att")} />
-      <Combatiente piece={defender} cae={cae("def")} gana={gana("def")} />
+      <Combatiente piece={attacker} lado="izq" inclinacion={inclinacion} celda={celda} grosor={grosor}
+                   cae={cae("att")} gana={gana("att")} />
+      <Combatiente piece={defender} lado="der" inclinacion={inclinacion} celda={celda} grosor={grosor}
+                   cae={cae("def")} gana={gana("def")} />
     </div>
   );
 }
@@ -1358,35 +1365,6 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
           transformOrigin:"50% 100%",
         }}>
           <div style={{ position:"relative" }}>
-            <AiMoveArrow aiMoveAnim={aiMoveAnim} celda={celda} />
-            <CombatOverlay combat={combat} />
-
-            {/* La pieza que está recorriendo su jugada. Si es del rival y sigue
-                oculta, viaja de dorso: moverse no la desvela. */}
-            {deslizando && (
-              <div style={{
-                position:"absolute", zIndex:15, pointerEvents:"none",
-                left: deslizando.fc * (celda + GAP),
-                top:  deslizando.fr * (celda + GAP),
-                width:celda, height:celda,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                "--dx": `${(deslizando.tc - deslizando.fc) * (celda + GAP)}px`,
-                "--dy": `${(deslizando.tr - deslizando.fr) * (celda + GAP)}px`,
-                animation:`deslizar ${DESLIZ_MS}ms cubic-bezier(0.33,0.9,0.35,1) forwards`,
-              }}>
-                <EnPie inclinacion={camara.inclinacion} celda={celda}>
-                  {deslizando.pieza.player === "human" || deslizando.pieza.revealed ? (
-                    <PieceTile
-                      name={deslizando.pieza.name}
-                      owner={deslizando.pieza.player === "human" ? "mine" : "theirs"}
-                      relieve={relieve} elevada grosor={grosor} celda={celda}
-                    />
-                  ) : (
-                    <HiddenTile relieve={relieve} grosor={grosor} />
-                  )}
-                </EnPie>
-              </div>
-            )}
             <div style={{ display:"grid", gridTemplateColumns:`repeat(10,${celda}px)`, gap:GAP }}>
               {board.map((row, r) =>
                 row.map((piece, c) => {
@@ -1410,7 +1388,8 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
                       style={{
                         width:celda, height:celda, borderRadius:4,
                         background: lake ? T.lake : squareBg(r, c),
-                        boxShadow: sel2 ? `inset 0 0 0 3px ${T.select}`
+                        boxShadow: luchando ? `inset 0 0 0 3px ${T.brassBright}, 0 0 22px ${T.brassBright}77`
+                          : sel2 ? `inset 0 0 0 3px ${T.select}`
                           : attackable ? `inset 0 0 0 3px ${T.capture}`
                           : rastroA ? `inset 0 0 0 2px ${T.brass}AA`
                           : rastroDe ? `inset 0 0 0 2px ${T.brass}55`
@@ -1447,6 +1426,36 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
               )}
             </div>
           </div>
+            <AiMoveArrow aiMoveAnim={aiMoveAnim} celda={celda} />
+            <CombatOverlay combat={combat} celda={celda}
+                            inclinacion={camara.inclinacion} grosor={grosor} />
+
+            {/* La pieza que está recorriendo su jugada. Si es del rival y sigue
+                oculta, viaja de dorso: moverse no la desvela. */}
+            {deslizando && (
+              <div style={{
+                position:"absolute", zIndex:15, pointerEvents:"none",
+                left: deslizando.fc * (celda + GAP),
+                top:  deslizando.fr * (celda + GAP),
+                width:celda, height:celda,
+                display:"flex", alignItems:"center", justifyContent:"center",
+                "--dx": `${(deslizando.tc - deslizando.fc) * (celda + GAP)}px`,
+                "--dy": `${(deslizando.tr - deslizando.fr) * (celda + GAP)}px`,
+                animation:`deslizar ${DESLIZ_MS}ms cubic-bezier(0.33,0.9,0.35,1) forwards`,
+              }}>
+                <EnPie inclinacion={camara.inclinacion} celda={celda}>
+                  {deslizando.pieza.player === "human" || deslizando.pieza.revealed ? (
+                    <PieceTile
+                      name={deslizando.pieza.name}
+                      owner={deslizando.pieza.player === "human" ? "mine" : "theirs"}
+                      relieve={relieve} elevada grosor={grosor} celda={celda}
+                    />
+                  ) : (
+                    <HiddenTile relieve={relieve} grosor={grosor} />
+                  )}
+                </EnPie>
+              </div>
+            )}
 
           <div style={{ display:"flex", gap:GAP, marginTop:5 }}>
             {Array.from({length:10},(_,i) => (
@@ -1719,6 +1728,25 @@ export default function Stratego() {
           from { transform: rotate(var(--a,0deg)) translateY(-4px)  scale(1); opacity: 1 }
           to   { transform: rotate(var(--a,0deg)) translateY(-30px) scale(0); opacity: 0 }
         }
+        /* Las dos se embisten al destaparse */
+        @keyframes embestir {
+          0%   { transform: translateX(calc(var(--dx) * 2.1)) }
+          60%  { transform: translateX(calc(var(--dx) * 0.82)) }
+          100% { transform: translateX(var(--dx)) }
+        }
+        /* La perdedora encaja el golpe, se va hacia atrás y se derrumba */
+        @keyframes caerAtras {
+          0%   { transform: translateX(var(--dx)) rotateX(0deg);   opacity:1 }
+          18%  { transform: translateX(calc(var(--dx) * 1.25)) rotateX(-12deg); opacity:1 }
+          100% { transform: translateX(calc(var(--dx) * 1.6)) rotateX(88deg);   opacity:0 }
+        }
+        /* La ganadora se queda con la casilla */
+        @keyframes avanzarCentro {
+          0%   { transform: translateX(var(--dx)) scale(1) }
+          35%  { transform: translateX(calc(var(--dx) * 0.5)) scale(1.1) }
+          100% { transform: translateX(0) scale(1) }
+        }
+
         /* La ficha que gana da un pequeño empujón */
         @keyframes vencer {
           0%   { transform: scale(1) }
