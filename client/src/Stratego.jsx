@@ -221,14 +221,28 @@ function Insignia({ name, color, scale = 1 }) {
   );
 }
 
-function PieceTile({ name, owner = "mine", scale = 1, dim = false }) {
+// El canto de la ficha: una pila de sombras sólidas, cada una un píxel más
+// abajo, que finge el grosor. Es la forma barata de que una ficha plana parezca
+// una ficha de verdad apoyada en el tapete — y funciona igual con el tablero
+// inclinado, sin necesidad de capas 3D reales.
+function relieveDe(color, alturaPx, elevada) {
+  const capas = Array.from({ length: alturaPx }, (_, i) => `0 ${i + 1}px 0 ${color}`);
+  const sombra = elevada
+    ? `0 ${alturaPx + 7}px 10px rgba(0,0,0,0.55)`
+    : `0 ${alturaPx + 2}px 5px rgba(0,0,0,0.45)`;
+  return [...capas, sombra].join(", ");
+}
+
+function PieceTile({ name, owner = "mine", scale = 1, dim = false, relieve = false, elevada = false }) {
   const skin = owner === "mine" ? T.mine : T.theirs;
   const d = PIECES[name];
   return (
     <div title={d.label} style={{
       width:"90%", height:"90%", borderRadius:7,
       background:skin.bg, border:`1px solid ${skin.border}`,
-      boxShadow:skin.shadow,
+      boxShadow: relieve ? relieveDe(skin.border, Math.round(4 * scale), elevada) : skin.shadow,
+      transform: relieve && elevada ? "translateY(-4px)" : "none",
+      transition:"transform 0.14s ease, box-shadow 0.14s ease",
       display:"flex", flexDirection:"column",
       alignItems:"center", justifyContent:"center",
       position:"relative", overflow:"hidden",
@@ -279,7 +293,7 @@ function MiniFicha({ name, owner = "mine", size = 24, apagada = false }) {
 //   · un punto → se ha movido: no es bomba ni bandera
 //   · un "2"   → dio un salto de dos: Explorador u oficial (Capitán o superior)
 //   · un "II"  → dio un salto de tres o más: solo puede ser un Explorador
-function HiddenTile({ movida, salto }) {
+function HiddenTile({ movida, salto, relieve = false }) {
   const marca = salto >= 3
     ? { texto: "II", pista: "Saltó tres casillas o más: solo puede ser un Explorador" }
     : salto === 2
@@ -291,7 +305,7 @@ function HiddenTile({ movida, salto }) {
     <div style={{
       width:"90%", height:"90%", borderRadius:7,
       background:T.hidden.bg, border:`1px solid ${T.hidden.border}`,
-      boxShadow:"0 2px 4px rgba(0,0,0,0.4)",
+      boxShadow: relieve ? relieveDe(T.hidden.border, 4, false) : "0 2px 4px rgba(0,0,0,0.4)",
       display:"flex", alignItems:"center", justifyContent:"center",
       position:"relative", overflow:"hidden",
     }}>
@@ -371,8 +385,34 @@ const PanelTitle = ({ children }) => (
   }}>{children}</div>
 );
 
+// Interruptor de vista: tablero plano o inclinado en perspectiva
+function InterruptorVista({ vista, onCambiar }) {
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+      <span style={{ fontSize:11, color:T.textSoft, letterSpacing:1.4, fontWeight:700, textTransform:"uppercase" }}>
+        Vista
+      </span>
+      {[["plana","Plana"], ["3d","3D"]].map(([id, etiqueta]) => {
+        const activa = vista === id;
+        return (
+          <button key={id} onClick={() => onCambiar(id)}
+            style={{
+              padding:"5px 12px", borderRadius:20,
+              background: activa ? T.brassFaint : "rgba(247,238,221,0.05)",
+              border: activa ? `1.5px solid ${T.brass}` : `1px solid ${T.panelBorder}`,
+              color: activa ? T.brassBright : T.textSoft,
+              fontFamily:FONTS.ui, fontSize:11.5, fontWeight: activa ? 700 : 500,
+              cursor:"pointer", transition:"all 0.12s",
+            }}>{etiqueta}</button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── FASE DE DESPLIEGUE ───────────────────────────────────────────────────────
-function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVolver }) {
+function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVolver, vista, onCambiarVista }) {
+  const relieve = vista === "3d";
   const [placed, setPlaced] = useState(Array.from({length:10}, () => Array(10).fill(null)));
   // Qué tenemos "en la mano": una pieza de la bandeja, o una ya puesta en el
   // tablero que queremos recolocar.
@@ -554,6 +594,8 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
         })}
       </div>
 
+      <InterruptorVista vista={vista} onCambiar={onCambiarVista} />
+
       {/* Selector de zonas de agua · solo en 2.0 */}
       <div style={{
         display: reglas.aguaConfigurable ? "flex" : "none",
@@ -581,10 +623,14 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
       </div>
 
       {/* Tablero */}
+      <div style={{ perspective: relieve ? 1250 : "none", perspectiveOrigin:"50% 25%" }}>
       <div style={{
         padding:10, borderRadius:12,
         background:T.frameBg, border:`2px solid ${T.frameBorder}`,
         boxShadow:`inset 0 0 0 1px ${T.frameInner}, 0 12px 30px rgba(0,0,0,0.45)`,
+        transform: relieve ? "rotateX(16deg)" : "none",
+        transformOrigin:"50% 70%",
+        transition:"transform 0.45s ease",
       }}>
         <div style={{ display:"grid", gridTemplateColumns:`repeat(10,${CELL}px)`, gap:GAP }}>
           {Array.from({length:10}, (_, r) =>
@@ -639,7 +685,8 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
                         width:"100%", height:"100%",
                         display:"flex", alignItems:"center", justifyContent:"center",
                       }}>
-                      <PieceTile name={p} owner="mine" dim={cogida(r, c)} />
+                      <PieceTile name={p} owner="mine" dim={cogida(r, c)}
+                                 relieve={relieve} elevada={cogida(r, c)} />
                     </div>
                   )}
                   {enemiga && !lake && (
@@ -653,6 +700,7 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
             })
           )}
         </div>
+      </div>
       </div>
 
       <div style={{ display:"flex", gap:10, alignItems:"center" }}>
@@ -692,6 +740,7 @@ const botonSecundario = {
 // Sin ventanas emergentes: el combate se resuelve donde ocurre. Se destapan las
 // dos fichas sobre la casilla atacada, chocan, y la perdedora (o las dos, si
 // empatan) se rompe y desaparece.
+const DESLIZ_MS = 260;            // lo que tarda una pieza en recorrer su jugada
 const COMBATE_REVELAR  = 750;   // ms mostrando las dos fichas frente a frente
 const COMBATE_DESTRUIR = 600;   // ms de la ruptura de la perdedora
 
@@ -832,7 +881,8 @@ function AiMoveArrow({ aiMoveAnim }) {
 }
 
 // ─── TABLERO DE JUEGO ─────────────────────────────────────────────────────────
-function GameBoard({ board: initBoard, onReset, lagos, reglas }) {
+function GameBoard({ board: initBoard, onReset, lagos, reglas, vista, onCambiarVista }) {
+  const relieve = vista === "3d";
   const [board, setBoard]         = useState(initBoard);
   const [selCell, setSelCell]     = useState(null);
   const [validMoves, setValidMoves] = useState([]);
@@ -844,6 +894,7 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas }) {
   const [aiThinking, setAiThinking] = useState(false);
   const [bajas, setBajas]         = useState({ human: [], ai: [] });
   const [ultimoMov, setUltimoMov] = useState(null);   // última jugada de la IA
+  const [deslizando, setDeslizando] = useState(null); // pieza viajando ahora mismo
 
   // Todos los temporizadores en marcha, para poder cancelarlos si el jugador
   // reinicia la partida a media animación.
@@ -911,6 +962,21 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas }) {
 
   // Cuando hay combate no actualizamos el tablero de inmediato: primero se ve la
   // escena sobre la casilla atacada, y al terminar se aplica el resultado.
+  // Toda jugada pasa por aquí: la pieza recorre las casillas en vez de
+  // teletransportarse, y solo cuando llega se actualiza el tablero. Si el
+  // movimiento era un ataque, al aterrizar arranca la escena de combate.
+  function moverConAnimacion(pieza, res, fr, fc, tr, tc, despues) {
+    setDeslizando({ pieza, fr, fc, tr, tc });
+    programar(() => {
+      setDeslizando(null);
+      if (res.battleInfo) { escenificarCombate(res, fr, fc, tr, tc, despues); return; }
+      setBoard(res.nb);
+      const winner = checkWinner(res.nb, lagos, reglas);
+      if (winner) { setGameOver(winner); return; }
+      despues();
+    }, DESLIZ_MS);
+  }
+
   function escenificarCombate(res, fr, fc, tr, tc, despues) {
     const { nb, battleInfo, mensaje, bajas: caidas } = res;
     setCombat({ ...battleInfo, fr, fc, r: tr, c: tc, fase: "revelar" });
@@ -944,20 +1010,14 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas }) {
           addLog(`IA · ${coord(move.fr, move.fc)} → ${coord(move.tr, move.tc)}` +
                  (res.distancia > 1 ? ` · ${res.distancia} casillas` : ""));
         }
-        if (res.battleInfo) {
-          escenificarCombate(res, move.fr, move.fc, move.tr, move.tc, () => setTurn("human"));
-          return;
-        }
-        setBoard(res.nb);
-        const winner = checkWinner(res.nb, lagos, reglas);
-        if (winner) { setGameOver(winner); return; }
-        setTurn("human");
+        moverConAnimacion(b[move.fr][move.fc], res, move.fr, move.fc, move.tr, move.tc,
+                          () => setTurn("human"));
       }, 950);
     }, 650);
   }
 
   function clickCell(r, c) {
-    if (turn !== "human" || combat || gameOver || aiMoveAnim || aiThinking) return;
+    if (turn !== "human" || combat || gameOver || aiMoveAnim || aiThinking || deslizando) return;
     const piece = board[r][c];
     if (selCell) {
       const [sr, sc] = selCell;
@@ -965,14 +1025,7 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas }) {
         const res = applyMove(board, sr, sc, r, c);
         setSelCell(null); setValidMoves([]);
         setUltimoMov(null);          // al mover yo, se borra el rastro del rival
-        if (res.battleInfo) {
-          escenificarCombate(res, sr, sc, r, c, () => doAiTurn(res.nb));
-          return;
-        }
-        setBoard(res.nb);
-        const winner = checkWinner(res.nb, lagos, reglas);
-        if (winner) { setGameOver(winner); return; }
-        doAiTurn(res.nb);
+        moverConAnimacion(board[sr][sc], res, sr, sc, r, c, () => doAiTurn(res.nb));
       } else if (piece?.player === "human") {
         setSelCell([r,c]);
         setValidMoves(getValidMoves(board, r, c, lagos, reglas));
@@ -1042,14 +1095,43 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas }) {
           )}
         </div>
 
+        <div style={{ perspective: relieve ? 1250 : "none", perspectiveOrigin:"50% 25%" }}>
         <div style={{
           padding:10, borderRadius:12,
           background:T.frameBg, border:`2px solid ${T.frameBorder}`,
           boxShadow:`inset 0 0 0 1px ${T.frameInner}, 0 12px 30px rgba(0,0,0,0.45)`,
+          transform: relieve ? "rotateX(16deg)" : "none",
+          transformOrigin:"50% 70%",
+          transition:"transform 0.45s ease",
         }}>
           <div style={{ position:"relative" }}>
             <AiMoveArrow aiMoveAnim={aiMoveAnim} />
             <CombatOverlay combat={combat} />
+
+            {/* La pieza que está recorriendo su jugada. Si es del rival y sigue
+                oculta, viaja de dorso: moverse no la desvela. */}
+            {deslizando && (
+              <div style={{
+                position:"absolute", zIndex:15, pointerEvents:"none",
+                left: deslizando.fc * (CELL + GAP),
+                top:  deslizando.fr * (CELL + GAP),
+                width:CELL, height:CELL,
+                display:"flex", alignItems:"center", justifyContent:"center",
+                "--dx": `${(deslizando.tc - deslizando.fc) * (CELL + GAP)}px`,
+                "--dy": `${(deslizando.tr - deslizando.fr) * (CELL + GAP)}px`,
+                animation:`deslizar ${DESLIZ_MS}ms cubic-bezier(0.33,0.9,0.35,1) forwards`,
+              }}>
+                {deslizando.pieza.player === "human" || deslizando.pieza.revealed ? (
+                  <PieceTile
+                    name={deslizando.pieza.name}
+                    owner={deslizando.pieza.player === "human" ? "mine" : "theirs"}
+                    relieve={relieve} elevada
+                  />
+                ) : (
+                  <HiddenTile relieve={relieve} />
+                )}
+              </div>
+            )}
             <div style={{ display:"grid", gridTemplateColumns:`repeat(10,${CELL}px)`, gap:GAP }}>
               {board.map((row, r) =>
                 row.map((piece, c) => {
@@ -1061,7 +1143,8 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas }) {
                   // Las dos fichas que están combatiendo se dibujan en la escena
                   // del combate, no en su casilla: aquí las ocultamos.
                   const luchando   = combat && ((combat.r === r && combat.c === c) || (combat.fr === r && combat.fc === c));
-                  const showPiece  = !luchando && (isHuman || (isAi && piece?.revealed));
+                  const saliendo   = deslizando && deslizando.fr === r && deslizando.fc === c;
+                  const showPiece  = !luchando && !saliendo && (isHuman || (isAi && piece?.revealed));
                   const attackable = valid && piece?.player === "ai";
                   // Rastro de la última jugada del rival
                   const rastroDe = reglas.ayudas && ultimoMov && ultimoMov.fr === r && ultimoMov.fc === c;
@@ -1088,11 +1171,15 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas }) {
                         <div style={{ width:16, height:16, borderRadius:"50%", background:T.moveDot }}/>
                       )}
                       {lake && <Lake />}
-                      {showPiece && <PieceTile name={piece.name} owner={isHuman ? "mine" : "theirs"} />}
-                      {isAi && !piece.revealed && !luchando && (
+                      {showPiece && (
+                        <PieceTile name={piece.name} owner={isHuman ? "mine" : "theirs"}
+                                   relieve={relieve} elevada={sel2} />
+                      )}
+                      {isAi && !piece.revealed && !luchando && !saliendo && (
                         <HiddenTile
                           movida={reglas.ayudas && piece.hasMoved}
                           salto={reglas.ayudas ? piece.maxSalto : 0}
+                          relieve={relieve}
                         />
                       )}
                     </div>
@@ -1109,6 +1196,7 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas }) {
               </div>
             ))}
           </div>
+        </div>
         </div>
       </div>
 
@@ -1160,6 +1248,14 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas }) {
               paddingLeft: i===0 ? 7 : 0,
             }}>{entry}</div>
           ))}
+        </div>
+
+        <div style={{
+          padding:"10px 12px", borderRadius:10,
+          background:T.panelBg, border:`1px solid ${T.panelBorder}`,
+          display:"flex", justifyContent:"center",
+        }}>
+          <InterruptorVista vista={vista} onCambiar={onCambiarVista} />
         </div>
 
         <button onClick={onReset} style={{
@@ -1275,6 +1371,10 @@ export default function Stratego() {
   const [aguaId, setAguaId] = useState("clasica");
   const [lagos, setLagos] = useState(() => crearLagos("clasica"));
 
+  // Vista del tablero: plano o inclinado en perspectiva. Es solo apariencia,
+  // no cambia ninguna regla, y se conserva al pasar de despliegue a partida.
+  const [vista, setVista] = useState("3d");
+
   const reglas = MODOS[modo]?.reglas ?? REGLAS_POR_DEFECTO;
 
   // Al elegir modo se empieza de cero, con el agua clásica: en el modo clásico
@@ -1319,6 +1419,13 @@ export default function Stratego() {
         @keyframes pulseRed { from{opacity:0.7} to{opacity:1} }
         @keyframes pulseGold{ from{opacity:0.6} to{opacity:1} }
         @keyframes slideIn  { from{opacity:0} to{opacity:1} }
+
+        /* La pieza recorre su jugada. El desplazamiento va en variables CSS que
+           se calculan al vuelo, según de dónde a dónde se mueva. */
+        @keyframes deslizar {
+          from { transform: translate(0, 0) }
+          to   { transform: translate(var(--dx, 0), var(--dy, 0)) }
+        }
 
         /* ── Combate ───────────────────────────────────────────────────────── */
         /* Las dos fichas entran una contra otra.
@@ -1386,11 +1493,13 @@ export default function Stratego() {
           onReady={b => { setGameBoard(b); setPhase("game"); }}
           lagos={lagos} aguaId={aguaId} onCambiarAgua={cambiarAgua}
           reglas={reglas} modo={modo} onVolver={volverAlInicio}
+          vista={vista} onCambiarVista={setVista}
         />
       )}
       {modo && phase === "game" && gameBoard && (
         <GameBoard
-          board={gameBoard} lagos={lagos} reglas={reglas}
+          board={gameBoard} lagos={lagos} reglas={reglas} vista={vista}
+          onCambiarVista={setVista}
           onReset={() => { setGameBoard(null); setPhase("setup"); }}
         />
       )}
