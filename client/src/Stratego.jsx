@@ -385,34 +385,89 @@ const PanelTitle = ({ children }) => (
   }}>{children}</div>
 );
 
-// Interruptor de vista: tablero plano o inclinado en perspectiva
-function InterruptorVista({ vista, onCambiar }) {
-  return (
-    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-      <span style={{ fontSize:11, color:T.textSoft, letterSpacing:1.4, fontWeight:700, textTransform:"uppercase" }}>
-        Vista
+// ─── CÁMARA ───────────────────────────────────────────────────────────────────
+// La vista del tablero es un plano inclinado, no una escena 3D: se le da
+// perspectiva, se gira sobre su eje horizontal y se acerca. Cada jugador la
+// ajusta a su gusto y la elección se guarda en el navegador.
+//
+// El tope son 45°: más allá, el plano se ve tan de canto que los números de las
+// fichas dejan de leerse y la ilusión se rompe.
+// Medidas del marco del tablero, para poder reservarle sitio en la maquetación
+const ANCHO_MARCO = 10 * CELL + 9 * GAP + 24;   // rejilla + relleno + borde
+const ALTO_MARCO  = ANCHO_MARCO + 19;           // + la fila de coordenadas
+
+// Una transformación CSS no ocupa espacio: el tablero se agranda pero su hueco
+// sigue siendo el de antes, y acaba pisando el panel lateral. Por eso el
+// contenedor reserva a mano el tamaño que el tablero va a ocupar de verdad.
+function huecoDeCamara({ inclinacion, cercania }) {
+  const radianes = (inclinacion * Math.PI) / 180;
+  return {
+    width:  ANCHO_MARCO * cercania,
+    height: ALTO_MARCO * cercania * Math.cos(radianes) + 12,
+  };
+}
+
+const CAMARA_POR_DEFECTO = { inclinacion: 26, cercania: 1.08 };
+const INCLINACION_MAX = 45;
+const CLAVE_CAMARA = "stratego:camara";
+
+function leerCamaraGuardada() {
+  try {
+    const guardado = JSON.parse(localStorage.getItem(CLAVE_CAMARA));
+    if (guardado && typeof guardado.inclinacion === "number") return guardado;
+  } catch { /* si el navegador no deja, se usa la de por defecto */ }
+  return CAMARA_POR_DEFECTO;
+}
+
+// Cuanto más inclinado, más corta la distancia focal: así el acercamiento se
+// nota de verdad en vez de quedarse en un gesto.
+function transformDeCamara({ inclinacion, cercania }) {
+  if (inclinacion === 0 && cercania === 1) return "none";
+  const foco = 1400 - inclinacion * 14;
+  return `perspective(${foco}px) rotateX(${inclinacion}deg) scale(${cercania})`;
+}
+
+function ControlesCamara({ camara, onCambiar }) {
+  const fila = (etiqueta, clave, min, max, paso, formato) => (
+    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+      <span style={{ fontSize:10.5, color:T.textSoft, width:66, flexShrink:0 }}>{etiqueta}</span>
+      <input
+        type="range" min={min} max={max} step={paso} value={camara[clave]}
+        onChange={e => onCambiar({ ...camara, [clave]: Number(e.target.value) })}
+        style={{ flex:1, accentColor:T.brass, cursor:"pointer", minWidth:70 }}
+      />
+      <span style={{ fontSize:10.5, color:T.brass, width:38, textAlign:"right", flexShrink:0 }}>
+        {formato(camara[clave])}
       </span>
-      {[["plana","Plana"], ["3d","3D"]].map(([id, etiqueta]) => {
-        const activa = vista === id;
-        return (
-          <button key={id} onClick={() => onCambiar(id)}
+    </div>
+  );
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:7, minWidth:210 }}>
+      <div style={{
+        fontSize:10, color:T.textSoft, letterSpacing:1.6,
+        fontWeight:700, textTransform:"uppercase",
+      }}>Vista</div>
+      {fila("Inclinación", "inclinacion", 0, INCLINACION_MAX, 1, v => `${v}°`)}
+      {fila("Cercanía", "cercania", 0.85, 1.4, 0.01, v => `${Math.round(v * 100)}%`)}
+      <div style={{ display:"flex", gap:6 }}>
+        {[["Plana", { inclinacion:0, cercania:1 }],
+          ["Mesa", CAMARA_POR_DEFECTO]].map(([texto, preset]) => (
+          <button key={texto} onClick={() => onCambiar(preset)}
             style={{
-              padding:"5px 12px", borderRadius:20,
-              background: activa ? T.brassFaint : "rgba(247,238,221,0.05)",
-              border: activa ? `1.5px solid ${T.brass}` : `1px solid ${T.panelBorder}`,
-              color: activa ? T.brassBright : T.textSoft,
-              fontFamily:FONTS.ui, fontSize:11.5, fontWeight: activa ? 700 : 500,
-              cursor:"pointer", transition:"all 0.12s",
-            }}>{etiqueta}</button>
-        );
-      })}
+              flex:1, padding:"4px 0", borderRadius:6,
+              background:"rgba(247,238,221,0.05)", border:`1px solid ${T.panelBorder}`,
+              color:T.textSoft, fontFamily:FONTS.ui, fontSize:10.5, cursor:"pointer",
+            }}>{texto}</button>
+        ))}
+      </div>
     </div>
   );
 }
 
 // ─── FASE DE DESPLIEGUE ───────────────────────────────────────────────────────
-function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVolver, vista, onCambiarVista }) {
-  const relieve = vista === "3d";
+function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVolver, camara, onCambiarCamara }) {
+  const relieve = camara.inclinacion > 0;
   const [placed, setPlaced] = useState(Array.from({length:10}, () => Array(10).fill(null)));
   // Qué tenemos "en la mano": una pieza de la bandeja, o una ya puesta en el
   // tablero que queremos recolocar.
@@ -594,7 +649,7 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
         })}
       </div>
 
-      <InterruptorVista vista={vista} onCambiar={onCambiarVista} />
+      <ControlesCamara camara={camara} onCambiar={onCambiarCamara} />
 
       {/* Selector de zonas de agua · solo en 2.0 */}
       <div style={{
@@ -623,14 +678,16 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
       </div>
 
       {/* Tablero */}
-      <div style={{ perspective: relieve ? 1250 : "none", perspectiveOrigin:"50% 25%" }}>
+      <div style={{
+        ...huecoDeCamara(camara),
+        display:"flex", alignItems:"flex-end", justifyContent:"center",
+      }}>
       <div style={{
         padding:10, borderRadius:12,
         background:T.frameBg, border:`2px solid ${T.frameBorder}`,
         boxShadow:`inset 0 0 0 1px ${T.frameInner}, 0 12px 30px rgba(0,0,0,0.45)`,
-        transform: relieve ? "rotateX(16deg)" : "none",
-        transformOrigin:"50% 70%",
-        transition:"transform 0.45s ease",
+        transform: transformDeCamara(camara),
+        transformOrigin:"50% 100%",
       }}>
         <div style={{ display:"grid", gridTemplateColumns:`repeat(10,${CELL}px)`, gap:GAP }}>
           {Array.from({length:10}, (_, r) =>
@@ -881,8 +938,8 @@ function AiMoveArrow({ aiMoveAnim }) {
 }
 
 // ─── TABLERO DE JUEGO ─────────────────────────────────────────────────────────
-function GameBoard({ board: initBoard, onReset, lagos, reglas, vista, onCambiarVista }) {
-  const relieve = vista === "3d";
+function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiarCamara }) {
+  const relieve = camara.inclinacion > 0;
   const [board, setBoard]         = useState(initBoard);
   const [selCell, setSelCell]     = useState(null);
   const [validMoves, setValidMoves] = useState([]);
@@ -1044,7 +1101,11 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, vista, onCambiarV
   const isValid = (r,c) => validMoves.some(([mr,mc]) => mr===r && mc===c);
 
   return (
-    <div style={{ display:"flex", gap:20, alignItems:"flex-start", fontFamily:FONTS.ui }}>
+    <div style={{
+      display:"flex", gap:20, alignItems:"flex-start", justifyContent:"center",
+      flexWrap:"wrap",   // al acercar el tablero, el panel pasa debajo en vez de cortarse
+      fontFamily:FONTS.ui,
+    }}>
       {gameOver && (
         <div style={{
           position:"fixed", inset:0, zIndex:300,
@@ -1095,14 +1156,16 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, vista, onCambiarV
           )}
         </div>
 
-        <div style={{ perspective: relieve ? 1250 : "none", perspectiveOrigin:"50% 25%" }}>
+        <div style={{
+          ...huecoDeCamara(camara),
+          display:"flex", alignItems:"flex-end", justifyContent:"center",
+        }}>
         <div style={{
           padding:10, borderRadius:12,
           background:T.frameBg, border:`2px solid ${T.frameBorder}`,
           boxShadow:`inset 0 0 0 1px ${T.frameInner}, 0 12px 30px rgba(0,0,0,0.45)`,
-          transform: relieve ? "rotateX(16deg)" : "none",
-          transformOrigin:"50% 70%",
-          transition:"transform 0.45s ease",
+          transform: transformDeCamara(camara),
+          transformOrigin:"50% 100%",
         }}>
           <div style={{ position:"relative" }}>
             <AiMoveArrow aiMoveAnim={aiMoveAnim} />
@@ -1251,11 +1314,10 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, vista, onCambiarV
         </div>
 
         <div style={{
-          padding:"10px 12px", borderRadius:10,
+          padding:"12px", borderRadius:10,
           background:T.panelBg, border:`1px solid ${T.panelBorder}`,
-          display:"flex", justifyContent:"center",
         }}>
-          <InterruptorVista vista={vista} onCambiar={onCambiarVista} />
+          <ControlesCamara camara={camara} onCambiar={onCambiarCamara} />
         </div>
 
         <button onClick={onReset} style={{
@@ -1371,9 +1433,13 @@ export default function Stratego() {
   const [aguaId, setAguaId] = useState("clasica");
   const [lagos, setLagos] = useState(() => crearLagos("clasica"));
 
-  // Vista del tablero: plano o inclinado en perspectiva. Es solo apariencia,
-  // no cambia ninguna regla, y se conserva al pasar de despliegue a partida.
-  const [vista, setVista] = useState("3d");
+  // Cámara: inclinación y cercanía del tablero. Es solo apariencia, no cambia
+  // ninguna regla. Se recuerda entre partidas y entre visitas.
+  const [camara, setCamara] = useState(leerCamaraGuardada);
+  function cambiarCamara(nueva) {
+    setCamara(nueva);
+    try { localStorage.setItem(CLAVE_CAMARA, JSON.stringify(nueva)); } catch { /* sin memoria, da igual */ }
+  }
 
   const reglas = MODOS[modo]?.reglas ?? REGLAS_POR_DEFECTO;
 
@@ -1488,21 +1554,31 @@ export default function Stratego() {
 
       {!modo && <PantallaInicio onElegir={elegirModo} />}
 
+      {/* Al acercar el tablero puede no caber a lo ancho. Con el desplazamiento
+          horizontal aquí, se centra cuando cabe y se puede arrastrar cuando no;
+          sin esto, la parte izquierda se salía de la ventana y no había forma
+          de llegar a ella. */}
+      <div style={{ width:"100%", overflowX:"auto", overflowY:"visible" }}>
+      <div style={{ display:"flex", justifyContent:"center", minWidth:"fit-content", padding:"0 14px" }}>
+
       {modo && phase === "setup" && (
         <SetupPhase
           onReady={b => { setGameBoard(b); setPhase("game"); }}
           lagos={lagos} aguaId={aguaId} onCambiarAgua={cambiarAgua}
           reglas={reglas} modo={modo} onVolver={volverAlInicio}
-          vista={vista} onCambiarVista={setVista}
+          camara={camara} onCambiarCamara={cambiarCamara}
         />
       )}
       {modo && phase === "game" && gameBoard && (
         <GameBoard
-          board={gameBoard} lagos={lagos} reglas={reglas} vista={vista}
-          onCambiarVista={setVista}
+          board={gameBoard} lagos={lagos} reglas={reglas}
+          camara={camara} onCambiarCamara={cambiarCamara}
           onReset={() => { setGameBoard(null); setPhase("setup"); }}
         />
       )}
+
+      </div>
+      </div>
     </div>
   );
 }
