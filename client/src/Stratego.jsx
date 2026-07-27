@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { theme as T, FONTS } from "./theme.js";
 import { CONFIGURACIONES_AGUA, crearLagos, esLago } from "../../shared/lagos.js";
 
@@ -29,8 +29,9 @@ const ESCALA_NUMERAL = { 1: 1, 2: 0.82, 3: 0.70, 4: 0.58 };
 const escalaNumeral = txt => ESCALA_NUMERAL[txt.length] ?? 0.54;
 
 const PIECE_NAMES = Object.keys(PIECES);
-const CELL = 58;
 const GAP = 2;
+const CELDA_MIN = 46;
+const CELDA_MAX = 86;
 
 // Mi zona de despliegue son las cuatro filas de abajo
 const enMiZona = (lagos, r, c) => r >= 6 && !esLago(lagos, r, c);
@@ -332,6 +333,33 @@ function HiddenTile({ movida, salto, relieve = false }) {
 
 const Lake = () => <span style={{ fontSize:20, color:T.lakeWave }}>〰</span>;
 
+// ── Fichas de pie ────────────────────────────────────────────────────────────
+// Sobre un tablero inclinado, una ficha plana se ve como lo que es: una
+// pegatina. Aquí se la contragira exactamente el mismo ángulo que al tablero,
+// así que su base queda apoyada en la casilla y el cuerpo se levanta hacia el
+// jugador — como las fichas de cartón del juego de mesa. La sombra elíptica al
+// pie es la que remata la ilusión: sin ella, la ficha parece flotar.
+function EnPie({ inclinacion, children }) {
+  if (!inclinacion) return children;
+  return (
+    <>
+      <span style={{
+        position:"absolute", bottom:"7%", left:"15%",
+        width:"70%", height:5, borderRadius:"50%",
+        background:"rgba(0,0,0,0.45)", filter:"blur(2.5px)",
+        pointerEvents:"none",
+      }}/>
+      <div style={{
+        width:"100%", height:"100%",
+        display:"flex", alignItems:"flex-end", justifyContent:"center",
+        transform:`rotateX(${-inclinacion}deg)`,
+        transformOrigin:"50% 92%",
+        transformStyle:"preserve-3d",
+      }}>{children}</div>
+    </>
+  );
+}
+
 // ─── CEMENTERIO ───────────────────────────────────────────────────────────────
 // Qué piezas ha perdido cada bando. En un tablero de verdad las ves apartadas a
 // un lado; aquí había que enseñarlas. Saber cuántas bombas quedan por salir
@@ -393,38 +421,49 @@ const PanelTitle = ({ children }) => (
 // El tope son 45°: más allá, el plano se ve tan de canto que los números de las
 // fichas dejan de leerse y la ilusión se rompe.
 // Medidas del marco del tablero, para poder reservarle sitio en la maquetación
-const ANCHO_MARCO = 10 * CELL + 9 * GAP + 24;   // rejilla + relleno + borde
-const ALTO_MARCO  = ANCHO_MARCO + 19;           // + la fila de coordenadas
+const anchoMarco = celda => 10 * celda + 9 * GAP + 24;   // rejilla + relleno + borde
+const altoMarco  = celda => anchoMarco(celda) + 19;      // + la fila de coordenadas
 
 // Una transformación CSS no ocupa espacio: el tablero se agranda pero su hueco
 // sigue siendo el de antes, y acaba pisando el panel lateral. Por eso el
 // contenedor reserva a mano el tamaño que el tablero va a ocupar de verdad.
-function huecoDeCamara({ inclinacion, cercania }) {
-  const radianes = (inclinacion * Math.PI) / 180;
-  return {
-    width:  ANCHO_MARCO * cercania,
-    height: ALTO_MARCO * cercania * Math.cos(radianes) + 12,
-  };
+// Cuánto alto ocupa de verdad el tablero una vez inclinado. La perspectiva
+// acorta bastante más que el coseno del ángulo, así que estimarlo dejaba un
+// hueco muerto enorme encima. Se mide el tablero ya dibujado y se reserva
+// exactamente eso: el espacio de arriba queda libre para agrandarlo.
+function useHuecoDeTablero(camara) {
+  const ref = useRef(null);
+  const [alto, setAlto] = useState(null);
+  useLayoutEffect(() => {
+    if (ref.current) setAlto(ref.current.getBoundingClientRect().height);
+  }, [camara.inclinacion, camara.tamano]);
+  const radianes = (camara.inclinacion * Math.PI) / 180;
+  return [ref, {
+    width:  anchoMarco(camara.tamano),
+    // hasta que se mide una vez, una estimación para no dar un salto feo
+    height: (alto ?? altoMarco(camara.tamano) * Math.cos(radianes)) + 10,
+  }];
 }
 
-const CAMARA_POR_DEFECTO = { inclinacion: 26, cercania: 1.08 };
+const CAMARA_POR_DEFECTO = { inclinacion: 26, tamano: 62 };
 const INCLINACION_MAX = 45;
 const CLAVE_CAMARA = "stratego:camara";
 
 function leerCamaraGuardada() {
   try {
     const guardado = JSON.parse(localStorage.getItem(CLAVE_CAMARA));
-    if (guardado && typeof guardado.inclinacion === "number") return guardado;
+    if (guardado && typeof guardado.inclinacion === "number"
+                 && typeof guardado.tamano === "number") return guardado;
   } catch { /* si el navegador no deja, se usa la de por defecto */ }
   return CAMARA_POR_DEFECTO;
 }
 
 // Cuanto más inclinado, más corta la distancia focal: así el acercamiento se
 // nota de verdad en vez de quedarse en un gesto.
-function transformDeCamara({ inclinacion, cercania }) {
-  if (inclinacion === 0 && cercania === 1) return "none";
+function transformDeCamara({ inclinacion }) {
+  if (inclinacion === 0) return "none";
   const foco = 1400 - inclinacion * 14;
-  return `perspective(${foco}px) rotateX(${inclinacion}deg) scale(${cercania})`;
+  return `perspective(${foco}px) rotateX(${inclinacion}deg)`;
 }
 
 function ControlesCamara({ camara, onCambiar }) {
@@ -449,9 +488,9 @@ function ControlesCamara({ camara, onCambiar }) {
         fontWeight:700, textTransform:"uppercase",
       }}>Vista</div>
       {fila("Inclinación", "inclinacion", 0, INCLINACION_MAX, 1, v => `${v}°`)}
-      {fila("Cercanía", "cercania", 0.85, 1.4, 0.01, v => `${Math.round(v * 100)}%`)}
+      {fila("Tamaño", "tamano", CELDA_MIN, CELDA_MAX, 2, v => `${v}px`)}
       <div style={{ display:"flex", gap:6 }}>
-        {[["Plana", { inclinacion:0, cercania:1 }],
+        {[["Plana", { ...CAMARA_POR_DEFECTO, inclinacion:0 }],
           ["Mesa", CAMARA_POR_DEFECTO]].map(([texto, preset]) => (
           <button key={texto} onClick={() => onCambiar(preset)}
             style={{
@@ -468,6 +507,8 @@ function ControlesCamara({ camara, onCambiar }) {
 // ─── FASE DE DESPLIEGUE ───────────────────────────────────────────────────────
 function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVolver, camara, onCambiarCamara }) {
   const relieve = camara.inclinacion > 0;
+  const celda = camara.tamano;
+  const [marcoRef, hueco] = useHuecoDeTablero(camara);
   const [placed, setPlaced] = useState(Array.from({length:10}, () => Array(10).fill(null)));
   // Qué tenemos "en la mano": una pieza de la bandeja, o una ya puesta en el
   // tablero que queremos recolocar.
@@ -678,18 +719,15 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
       </div>
 
       {/* Tablero */}
-      <div style={{
-        ...huecoDeCamara(camara),
-        display:"flex", alignItems:"flex-end", justifyContent:"center",
-      }}>
-      <div style={{
+      <div style={{ ...hueco, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
+      <div ref={marcoRef} style={{
         padding:10, borderRadius:12,
         background:T.frameBg, border:`2px solid ${T.frameBorder}`,
         boxShadow:`inset 0 0 0 1px ${T.frameInner}, 0 12px 30px rgba(0,0,0,0.45)`,
         transform: transformDeCamara(camara),
         transformOrigin:"50% 100%",
       }}>
-        <div style={{ display:"grid", gridTemplateColumns:`repeat(10,${CELL}px)`, gap:GAP }}>
+        <div style={{ display:"grid", gridTemplateColumns:`repeat(10,${celda}px)`, gap:GAP }}>
           {Array.from({length:10}, (_, r) =>
             Array.from({length:10}, (__, c) => {
               const lake = esLago(lagos, r, c);
@@ -707,7 +745,7 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
                   onDragLeave={() => setDragOver(prev => (prev && prev[0] === r && prev[1] === c ? null : prev))}
                   onDrop={e => { e.preventDefault(); soltarEn(r, c); }}
                   style={{
-                    width:CELL, height:CELL, borderRadius:4,
+                    width:celda, height:celda, borderRadius:4,
                     background: lake ? T.lake : squareBg(r, c),
                     boxShadow: cogida(r, c) ? `inset 0 0 0 3px ${T.select}`
                       : encima ? `inset 0 0 0 3px ${T.dropTarget}`
@@ -716,7 +754,7 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
                     position:"relative",
                     cursor: mia ? (p ? "grab" : sel ? "pointer" : "default") : "default",
                     display:"flex", alignItems:"center", justifyContent:"center",
-                    userSelect:"none",
+                    userSelect:"none", transformStyle:"preserve-3d",
                   }}>
                   {/* tinte: mi zona y la zona enemiga */}
                   {!lake && (mia || enemiga) && (
@@ -742,8 +780,10 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
                         width:"100%", height:"100%",
                         display:"flex", alignItems:"center", justifyContent:"center",
                       }}>
-                      <PieceTile name={p} owner="mine" dim={cogida(r, c)}
-                                 relieve={relieve} elevada={cogida(r, c)} />
+                      <EnPie inclinacion={camara.inclinacion}>
+                        <PieceTile name={p} owner="mine" dim={cogida(r, c)}
+                                   relieve={relieve} elevada={cogida(r, c)} />
+                      </EnPie>
                     </div>
                   )}
                   {enemiga && !lake && (
@@ -829,13 +869,13 @@ function Combatiente({ piece, cae, gana }) {
   );
 }
 
-function CombatOverlay({ combat }) {
+function CombatOverlay({ combat, celda }) {
   if (!combat) return null;
   const { r, c, attacker, defender, result, fase } = combat;
   const ANCHO_ESCENA = 120;
-  const anchoTablero = 10 * CELL + 9 * GAP;
-  const cx = c * (CELL + GAP) + CELL / 2;
-  const cy = r * (CELL + GAP) + CELL / 2;
+  const anchoTablero = 10 * celda + 9 * GAP;
+  const cx = c * (celda + GAP) + celda / 2;
+  const cy = r * (celda + GAP) + celda / 2;
   // Si el combate cae en una columna del borde, pegamos la escena al tablero
   // para que no se salga por fuera del marco.
   const izquierda = Math.max(0, Math.min(cx - ANCHO_ESCENA / 2, anchoTablero - ANCHO_ESCENA));
@@ -880,13 +920,13 @@ function CombatOverlay({ combat }) {
 }
 
 // ─── FLECHA DEL MOVIMIENTO DE LA IA ───────────────────────────────────────────
-function AiMoveArrow({ aiMoveAnim }) {
+function AiMoveArrow({ aiMoveAnim, celda }) {
   if (!aiMoveAnim) return null;
   const { fr, fc, tr, tc } = aiMoveAnim;
-  const fromX = fc * (CELL + GAP) + CELL / 2;
-  const fromY = fr * (CELL + GAP) + CELL / 2;
-  const toX   = tc * (CELL + GAP) + CELL / 2;
-  const toY   = tr * (CELL + GAP) + CELL / 2;
+  const fromX = fc * (celda + GAP) + celda / 2;
+  const fromY = fr * (celda + GAP) + celda / 2;
+  const toX   = tc * (celda + GAP) + celda / 2;
+  const toY   = tr * (celda + GAP) + celda / 2;
   const dx = toX - fromX, dy = toY - fromY;
   const len = Math.sqrt(dx*dx + dy*dy);
   const angle = Math.atan2(dy, dx) * 180 / Math.PI;
@@ -895,8 +935,8 @@ function AiMoveArrow({ aiMoveAnim }) {
     <div style={{ position:"absolute", inset:0, pointerEvents:"none", zIndex:10 }}>
       <div style={{
         position:"absolute",
-        left: fc*(CELL+GAP), top: fr*(CELL+GAP),
-        width:CELL, height:CELL, borderRadius:4,
+        left: fc*(celda+GAP), top: fr*(celda+GAP),
+        width:celda, height:celda, borderRadius:4,
         background:`${T.aiFrom}33`,
         border:`2px solid ${T.aiFrom}`,
         boxShadow:`0 0 18px ${T.aiFrom}99`,
@@ -904,8 +944,8 @@ function AiMoveArrow({ aiMoveAnim }) {
       }}/>
       <div style={{
         position:"absolute",
-        left: tc*(CELL+GAP), top: tr*(CELL+GAP),
-        width:CELL, height:CELL, borderRadius:4,
+        left: tc*(celda+GAP), top: tr*(celda+GAP),
+        width:celda, height:celda, borderRadius:4,
         background:`${T.aiTo}2E`,
         border:`2px solid ${T.aiTo}`,
         boxShadow:`0 0 18px ${T.aiTo}88`,
@@ -940,6 +980,8 @@ function AiMoveArrow({ aiMoveAnim }) {
 // ─── TABLERO DE JUEGO ─────────────────────────────────────────────────────────
 function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiarCamara }) {
   const relieve = camara.inclinacion > 0;
+  const celda = camara.tamano;
+  const [marcoRef, hueco] = useHuecoDeTablero(camara);
   const [board, setBoard]         = useState(initBoard);
   const [selCell, setSelCell]     = useState(null);
   const [validMoves, setValidMoves] = useState([]);
@@ -1156,11 +1198,8 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
           )}
         </div>
 
-        <div style={{
-          ...huecoDeCamara(camara),
-          display:"flex", alignItems:"flex-end", justifyContent:"center",
-        }}>
-        <div style={{
+        <div style={{ ...hueco, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
+        <div ref={marcoRef} style={{
           padding:10, borderRadius:12,
           background:T.frameBg, border:`2px solid ${T.frameBorder}`,
           boxShadow:`inset 0 0 0 1px ${T.frameInner}, 0 12px 30px rgba(0,0,0,0.45)`,
@@ -1168,7 +1207,7 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
           transformOrigin:"50% 100%",
         }}>
           <div style={{ position:"relative" }}>
-            <AiMoveArrow aiMoveAnim={aiMoveAnim} />
+            <AiMoveArrow aiMoveAnim={aiMoveAnim} celda={celda} />
             <CombatOverlay combat={combat} />
 
             {/* La pieza que está recorriendo su jugada. Si es del rival y sigue
@@ -1176,26 +1215,28 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
             {deslizando && (
               <div style={{
                 position:"absolute", zIndex:15, pointerEvents:"none",
-                left: deslizando.fc * (CELL + GAP),
-                top:  deslizando.fr * (CELL + GAP),
-                width:CELL, height:CELL,
+                left: deslizando.fc * (celda + GAP),
+                top:  deslizando.fr * (celda + GAP),
+                width:celda, height:celda,
                 display:"flex", alignItems:"center", justifyContent:"center",
-                "--dx": `${(deslizando.tc - deslizando.fc) * (CELL + GAP)}px`,
-                "--dy": `${(deslizando.tr - deslizando.fr) * (CELL + GAP)}px`,
+                "--dx": `${(deslizando.tc - deslizando.fc) * (celda + GAP)}px`,
+                "--dy": `${(deslizando.tr - deslizando.fr) * (celda + GAP)}px`,
                 animation:`deslizar ${DESLIZ_MS}ms cubic-bezier(0.33,0.9,0.35,1) forwards`,
               }}>
-                {deslizando.pieza.player === "human" || deslizando.pieza.revealed ? (
-                  <PieceTile
-                    name={deslizando.pieza.name}
-                    owner={deslizando.pieza.player === "human" ? "mine" : "theirs"}
-                    relieve={relieve} elevada
-                  />
-                ) : (
-                  <HiddenTile relieve={relieve} />
-                )}
+                <EnPie inclinacion={camara.inclinacion}>
+                  {deslizando.pieza.player === "human" || deslizando.pieza.revealed ? (
+                    <PieceTile
+                      name={deslizando.pieza.name}
+                      owner={deslizando.pieza.player === "human" ? "mine" : "theirs"}
+                      relieve={relieve} elevada
+                    />
+                  ) : (
+                    <HiddenTile relieve={relieve} />
+                  )}
+                </EnPie>
               </div>
             )}
-            <div style={{ display:"grid", gridTemplateColumns:`repeat(10,${CELL}px)`, gap:GAP }}>
+            <div style={{ display:"grid", gridTemplateColumns:`repeat(10,${celda}px)`, gap:GAP }}>
               {board.map((row, r) =>
                 row.map((piece, c) => {
                   const lake       = esLago(lagos, r, c);
@@ -1216,7 +1257,7 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
                   return (
                     <div key={`${r}-${c}`} onClick={() => clickCell(r, c)}
                       style={{
-                        width:CELL, height:CELL, borderRadius:4,
+                        width:celda, height:celda, borderRadius:4,
                         background: lake ? T.lake : squareBg(r, c),
                         boxShadow: sel2 ? `inset 0 0 0 3px ${T.select}`
                           : attackable ? `inset 0 0 0 3px ${T.capture}`
@@ -1227,7 +1268,7 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
                         position:"relative",
                         cursor: (isHuman && turn==="human" && !aiThinking && !aiMoveAnim) || valid ? "pointer" : "default",
                         display:"flex", alignItems:"center", justifyContent:"center",
-                        userSelect:"none",
+                        userSelect:"none", transformStyle:"preserve-3d",
                       }}>
 
                       {valid && !piece && (
@@ -1235,15 +1276,19 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
                       )}
                       {lake && <Lake />}
                       {showPiece && (
-                        <PieceTile name={piece.name} owner={isHuman ? "mine" : "theirs"}
-                                   relieve={relieve} elevada={sel2} />
+                        <EnPie inclinacion={camara.inclinacion}>
+                          <PieceTile name={piece.name} owner={isHuman ? "mine" : "theirs"}
+                                     relieve={relieve} elevada={sel2} />
+                        </EnPie>
                       )}
                       {isAi && !piece.revealed && !luchando && !saliendo && (
-                        <HiddenTile
-                          movida={reglas.ayudas && piece.hasMoved}
-                          salto={reglas.ayudas ? piece.maxSalto : 0}
-                          relieve={relieve}
-                        />
+                        <EnPie inclinacion={camara.inclinacion}>
+                          <HiddenTile
+                            movida={reglas.ayudas && piece.hasMoved}
+                            salto={reglas.ayudas ? piece.maxSalto : 0}
+                            relieve={relieve}
+                          />
+                        </EnPie>
                       )}
                     </div>
                   );
@@ -1254,7 +1299,7 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
 
           <div style={{ display:"flex", gap:GAP, marginTop:5 }}>
             {Array.from({length:10},(_,i) => (
-              <div key={i} style={{ width:CELL, textAlign:"center", fontSize:10, color:T.textDim, fontWeight:600 }}>
+              <div key={i} style={{ width:celda, textAlign:"center", fontSize:10, color:T.textDim, fontWeight:600 }}>
                 {String.fromCharCode(65+i)}
               </div>
             ))}
