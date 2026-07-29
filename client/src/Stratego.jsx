@@ -464,15 +464,15 @@ function EnPie({ inclinacion, celda, children }) {
   // parcialmente la fila de detrás. Ese solapamiento es la señal que de verdad
   // dice "esto está levantado" — sin él, por mucho canto que le pongas, se
   // sigue leyendo como una pegatina.
-  const alto = celda * 1.12;   // algo más alta que la casilla, sin comerse la fila de atrás
+  const alto = altoDeFicha(celda, inclinacion);
   return (
     <>
       {/* sombra proyectada en la casilla, al pie de la ficha */}
       <span style={{
         position:"absolute", bottom:"9%", left:"12%",
-        width:"76%", height:6, borderRadius:"50%",
-        background:"rgba(0,0,0,0.5)", filter:"blur(3px)",
-        pointerEvents:"none",
+        width:"76%", height: 4 + 7 * senoDe(inclinacion), borderRadius:"50%",
+        background:`rgba(0,0,0,${0.34 + 0.26 * senoDe(inclinacion)})`,
+        filter:"blur(3px)", pointerEvents:"none",
       }}/>
       <div style={{
         position:"absolute", left:"6%", bottom:"8%",
@@ -611,6 +611,22 @@ function leerCamaraGuardada() {
 
 // Cuanto más inclinado, más corta la distancia focal: así el acercamiento se
 // nota de verdad en vez de quedarse en un gesto.
+// ── Cuánto relieve coge una ficha según lo tumbado que esté el tablero ──────
+// Con el tablero de frente no se ve nada del canto; según se inclina, se va
+// viendo la cara de arriba. Lo que llega al ojo es el espesor multiplicado por
+// el seno del ángulo, así que con un espesor fijo el relieve casi desaparece a
+// poca inclinación y se queda corto a mucha. Haciéndolo crecer con el ángulo,
+// la ficha se ve plana de frente y claramente en bloque cuando el tablero se
+// tumba — que es como se comporta un objeto de verdad.
+const senoDe = grados => Math.sin((grados * Math.PI) / 180);
+
+const grosorDeFicha = (celda, inclinacion) =>
+  inclinacion ? Math.max(3, Math.round(celda * (0.06 + 0.26 * senoDe(inclinacion)))) : 0;
+
+// Y también se estiran un poco: cuanto más de canto, más se levantan sobre la
+// casilla y más tapan la fila de detrás.
+const altoDeFicha = (celda, inclinacion) => celda * (1 + 0.34 * senoDe(inclinacion));
+
 function transformDeCamara({ inclinacion }) {
   if (inclinacion === 0) return "none";
   const foco = 1400 - inclinacion * 14;
@@ -661,7 +677,7 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
   const celda = camara.tamano;
   const [marcoRef, hueco] = useHuecoDeTablero(camara);
   // espesor del bloque, proporcional al tamaño de la casilla
-  const grosor = relieve ? Math.max(4, Math.round(celda * 0.10)) : 0;
+  const grosor = grosorDeFicha(celda, camara.inclinacion);
   const [placed, setPlaced] = useState(Array.from({length:10}, () => Array(10).fill(null)));
   // Qué tenemos "en la mano": una pieza de la bandeja, o una ya puesta en el
   // tablero que queremos recolocar.
@@ -910,8 +926,12 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
         boxShadow:`inset 0 0 0 1px ${T.frameInner}, 0 12px 30px rgba(0,0,0,0.45)`,
         transform: transformDeCamara(camara),
         transformOrigin:"50% 100%",
+        transformStyle:"preserve-3d",
       }}>
-        <div style={{ display:"grid", gridTemplateColumns:`repeat(10,${celda}px)`, gap:GAP }}>
+        <div style={{
+          display:"grid", gridTemplateColumns:`repeat(10,${celda}px)`, gap:GAP,
+          transformStyle:"preserve-3d",
+        }}>
           {Array.from({length:10}, (_, r) =>
             Array.from({length:10}, (__, c) => {
               const lake = esLago(lagos, r, c);
@@ -1174,7 +1194,7 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
   const celda = camara.tamano;
   const [marcoRef, hueco] = useHuecoDeTablero(camara);
   // espesor del bloque, proporcional al tamaño de la casilla
-  const grosor = relieve ? Math.max(4, Math.round(celda * 0.10)) : 0;
+  const grosor = grosorDeFicha(celda, camara.inclinacion);
   const [board, setBoard]         = useState(initBoard);
   const [selCell, setSelCell]     = useState(null);
   const [validMoves, setValidMoves] = useState([]);
@@ -1461,9 +1481,13 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
           boxShadow:`inset 0 0 0 1px ${T.frameInner}, 0 12px 30px rgba(0,0,0,0.45)`,
           transform: transformDeCamara(camara),
           transformOrigin:"50% 100%",
+          transformStyle:"preserve-3d",
         }}>
-          <div style={{ position:"relative" }}>
-            <div style={{ display:"grid", gridTemplateColumns:`repeat(10,${celda}px)`, gap:GAP }}>
+          <div style={{ position:"relative", transformStyle:"preserve-3d" }}>
+            <div style={{
+              display:"grid", gridTemplateColumns:`repeat(10,${celda}px)`, gap:GAP,
+              transformStyle:"preserve-3d",
+            }}>
               {board.map((row, r) =>
                 row.map((piece, c) => {
                   const lake       = esLago(lagos, r, c);
