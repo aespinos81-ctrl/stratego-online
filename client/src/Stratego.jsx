@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { theme as T, FONTS } from "./theme.js";
 import { CONFIGURACIONES_AGUA, crearLagos, esLago } from "../../shared/lagos.js";
+import { ESTRATEGIAS, ESTRATEGIA_POR_DEFECTO, generarDespliegue, estrategiaAleatoria } from "../../shared/despliegues.js";
 
 // ─── CONSTANTES ───────────────────────────────────────────────────────────────
 // `display` es lo que se pinta en la ficha: el rango en números romanos.
@@ -143,14 +144,17 @@ function getValidMoves(board, row, col, lagos, reglas = REGLAS_POR_DEFECTO) {
   return moves;
 }
 
-function aiSetup(lagos) {
-  const pool = shuffle(createPool());
+// La IA elige una formación al azar de entre las que tienen criterio. Antes
+// barajaba las 40 piezas, así que era normal encontrarle la bandera en primera
+// línea: se ganaba de carambola sin haber jugado bien.
+function aiSetup() {
+  const formacion = generarDespliegue(estrategiaAleatoria());
   const board = Array.from({length: 10}, () => Array(10).fill(null));
-  let idx = 0;
-  for (let r = 0; r < 4; r++)
+  // La IA ocupa las filas 0-3 y su vanguardia es la 3, así que se voltea:
+  // la fila 0 de la formación (vanguardia) va a la fila 3 del tablero.
+  for (let f = 0; f < 4; f++)
     for (let c = 0; c < 10; c++)
-      if (!esLago(lagos, r, c) && idx < pool.length)
-        board[r][c] = { name: pool[idx++], player: "ai", revealed: false };
+      board[3 - f][c] = { name: formacion[f][c], player: "ai", revealed: false };
   return board;
 }
 
@@ -664,6 +668,7 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
   //   { kind:"tray",  name }      · { kind:"board", r, c }
   const [sel, setSel] = useState(null);
   const [dragOver, setDragOver] = useState(null);
+  const [estrategia, setEstrategia] = useState(null);   // última formación aplicada
 
   const usedCounts = {};
   for (let r = 6; r < 10; r++)
@@ -749,15 +754,16 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
     }
   }
 
-  function autoArrange() {
-    const pool = shuffle(createPool());
+  // Aplica una formación. Volver a pulsar la misma vuelve a generarla: dentro
+  // de cada estrategia hay variación, así que no sale dos veces igual.
+  function aplicarEstrategia(id) {
+    const formacion = generarDespliegue(id);
     const nb = Array.from({length:10}, () => Array(10).fill(null));
-    let i = 0;
-    for (let r = 6; r < 10; r++)
-      for (let c = 0; c < 10; c++)
-        if (!esLago(lagos, r, c) && i < pool.length) nb[r][c] = pool[i++];
+    for (let f = 0; f < 4; f++)
+      for (let c = 0; c < 10; c++) nb[6 + f][c] = formacion[f][c];
     setPlaced(nb);
     setSel(null);
+    setEstrategia(id);
   }
 
   function vaciar() {
@@ -767,7 +773,7 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
 
   function startGame() {
     if (!allPlaced) return;
-    const aiBoard = aiSetup(lagos);
+    const aiBoard = aiSetup();
     for (let r = 6; r < 10; r++)
       for (let c = 0; c < 10; c++)
         aiBoard[r][c] = placed[r][c]
@@ -840,6 +846,35 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
       </div>
 
       <ControlesCamara camara={camara} onCambiar={onCambiarCamara} />
+
+      {/* Formaciones de despliegue */}
+      <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", justifyContent:"center" }}>
+        <span style={{ fontSize:11, color:T.textSoft, letterSpacing:1.4, fontWeight:700, textTransform:"uppercase" }}>
+          Formación
+        </span>
+        {Object.entries(ESTRATEGIAS).map(([id, e]) => {
+          const activa = estrategia === id;
+          return (
+            <button key={id} onClick={() => aplicarEstrategia(id)} title={e.detalle}
+              style={{
+                padding:"5px 12px", borderRadius:20,
+                background: activa ? T.brassFaint : "rgba(247,238,221,0.05)",
+                border: activa ? `1.5px solid ${T.brass}` : `1px solid ${T.panelBorder}`,
+                color: activa ? T.brassBright : T.textSoft,
+                fontFamily:FONTS.ui, fontSize:11.5, fontWeight: activa ? 700 : 500,
+                cursor:"pointer", transition:"all 0.12s",
+              }}>
+              {e.label}{activa ? " ↻" : ""}
+            </button>
+          );
+        })}
+      </div>
+      {estrategia && (
+        <p style={{ margin:"-6px 0 0", maxWidth:620, textAlign:"center",
+                    fontSize:11.5, color:T.textSoft, lineHeight:1.45 }}>
+          {ESTRATEGIAS[estrategia].detalle}
+        </p>
+      )}
 
       {/* Selector de zonas de agua · solo en 2.0 */}
       <div style={{
@@ -950,7 +985,7 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
       </div>
 
       <div style={{ display:"flex", gap:10, alignItems:"center" }}>
-        <button onClick={autoArrange} style={botonSecundario}>Despliegue automático</button>
+
         <button onClick={vaciar} disabled={faltan === 40} style={{
           ...botonSecundario,
           opacity: faltan === 40 ? 0.4 : 1,

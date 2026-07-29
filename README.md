@@ -38,6 +38,7 @@ stratego-online/
 │
 ├── shared/              ← reglas del juego (las usan cliente Y servidor)
 │   ├── lagos.js         ← disposiciones de agua (clásica, reducida, aleatoria…)
+│   ├── despliegues.js   ← formaciones de despliegue con criterio
 │   ├── pieces.js        ← definición de las 12 piezas y el tablero
 │   └── rules.js         ← combates, movimientos válidos, victoria
 │
@@ -199,6 +200,14 @@ disposición es simétrica al girar el tablero 180°, o un jugador saldría
 beneficiado; el sorteo además garantiza tres columnas libres para que el centro
 no se convierta en un embudo. El servidor guarda la suya en `Game` y la envía en
 `state.lagos` para que el navegador sepa dibujar el tablero.
+
+**Formaciones de despliegue** (en `shared/despliegues.js`): cinco maneras de
+colocar las 40 piezas — **equilibrada**, **fortaleza**, **ofensiva**, **señuelo**
+y **al azar**. Aplican las ideas que se usan de verdad: bandera al fondo y con
+alguna bomba al lado, exploradores en vanguardia, mineros conservados atrás,
+Marshal y General en flancos distintos, y nada valioso en la primera fila, que es
+la que sondean los exploradores enemigos el turno uno. **La IA también las usa**:
+antes barajaba las 40 piezas y se le podía encontrar la bandera en primera línea.
 
 **Movimiento** (en `shared/rules.js`, lo usan cliente y servidor):
 - Explorador: línea recta sin límite.
