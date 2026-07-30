@@ -983,6 +983,11 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
                       style={{
                         width:"100%", height:"100%",
                         display:"flex", alignItems:"center", justifyContent:"center",
+                        // Sin esto, este envoltorio aplasta el espacio 3D y la
+                        // ficha se queda tumbada sobre el tablero en vez de
+                        // ponerse de pie. En el tablero de juego no existe este
+                        // div, y por eso allí sí funcionaba.
+                        transformStyle:"preserve-3d",
                       }}>
                       <EnPie inclinacion={camara.inclinacion} celda={celda}>
                         <PieceTile name={p} owner="mine" dim={cogida(r, c)}
