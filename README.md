@@ -39,6 +39,7 @@ stratego-online/
 ├── shared/              ← reglas del juego (las usan cliente Y servidor)
 │   ├── lagos.js         ← disposiciones de agua (clásica, reducida, aleatoria…)
 │   ├── despliegues.js   ← formaciones de despliegue con criterio
+│   ├── ia.js            ← el oponente y sus cuatro niveles
 │   ├── pieces.js        ← definición de las 12 piezas y el tablero
 │   └── rules.js         ← combates, movimientos válidos, victoria
 │
@@ -200,6 +201,15 @@ disposición es simétrica al girar el tablero 180°, o un jugador saldría
 beneficiado; el sorteo además garantiza tres columnas libres para que el centro
 no se convierta en un embudo. El servidor guarda la suya en `Game` y la envía en
 `state.lagos` para que el navegador sepa dibujar el tablero.
+
+**El oponente** (en `shared/ia.js`): cuatro niveles —**Recluta**, **Oficial**,
+**Veterano** y **Estratega**— que no se distinguen por un mando de "torpeza"
+sino por cuatro interruptores, cada uno tapando un agujero distinto: **amplitud**
+(entre cuántas de sus mejores jugadas elige al azar), **prudencia** (mide con qué
+pieza sondea, en vez de tirar el Marshal contra lo primero), **seguridad** (no se
+pone a tiro de tus piezas ya conocidas) y **deducción** (usa lo que cualquiera
+puede deducir mirando: qué piezas se han movido y cuántas bombas quedan). El
+nivel decide también con qué formación despliega.
 
 **Formaciones de despliegue** (en `shared/despliegues.js`): cinco maneras de
 colocar las 40 piezas — **equilibrada**, **fortaleza**, **ofensiva**, **señuelo**

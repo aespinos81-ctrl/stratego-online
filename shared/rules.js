@@ -29,20 +29,21 @@ export function resolveBattle(attackerName, defenderName) {
 export const ALCANCE_OFICIALES = 2;
 export const RANGO_OFICIAL = 6;
 
-export function alcanceDe(name) {
+// `alcanceOficiales` llega desde el modo de juego: 1 en el clásico, 2 en el 2.0.
+export function alcanceDe(name, alcanceOficiales = ALCANCE_OFICIALES) {
   if (name === "Scout") return Infinity;
-  return PIECES[name].rank >= RANGO_OFICIAL ? ALCANCE_OFICIALES : 1;
+  return PIECES[name].rank >= RANGO_OFICIAL ? alcanceOficiales : 1;
 }
 
 // ── ¿A dónde puede moverse una pieza? ────────────────────────────────────────
 // board: matriz 10x10 de { name, player } | null
 // Devuelve una lista de [fila, columna] destino válidas.
-export function getValidMoves(board, row, col, lagos = LAGOS_CLASICOS) {
+export function getValidMoves(board, row, col, lagos = LAGOS_CLASICOS, alcanceOficiales = ALCANCE_OFICIALES) {
   const piece = board[row][col];
   if (!piece) return [];
   if (piece.name === "Bomb" || piece.name === "Flag") return []; // no se mueven
 
-  const alcance = alcanceDe(piece.name);
+  const alcance = alcanceDe(piece.name, alcanceOficiales);
   const moves = [];
   const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
 

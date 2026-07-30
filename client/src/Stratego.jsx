@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { theme as T, FONTS } from "./theme.js";
 import { CONFIGURACIONES_AGUA, crearLagos, esLago } from "../../shared/lagos.js";
 import { ESTRATEGIAS, ESTRATEGIA_POR_DEFECTO, generarDespliegue, estrategiaAleatoria } from "../../shared/despliegues.js";
+import { NIVELES_IA, NIVEL_IA_POR_DEFECTO, elegirJugadaIA } from "../../shared/ia.js";
 
 // ─── CONSTANTES ───────────────────────────────────────────────────────────────
 // `display` es lo que se pinta en la ficha: el rango en números romanos.
@@ -147,8 +148,9 @@ function getValidMoves(board, row, col, lagos, reglas = REGLAS_POR_DEFECTO) {
 // La IA elige una formación al azar de entre las que tienen criterio. Antes
 // barajaba las 40 piezas, así que era normal encontrarle la bandera en primera
 // línea: se ganaba de carambola sin haber jugado bien.
-function aiSetup() {
-  const formacion = generarDespliegue(estrategiaAleatoria());
+function aiSetup(nivel) {
+  // El recluta despliega sin criterio; los demás usan una formación de verdad.
+  const formacion = generarDespliegue(nivel?.formacion ?? estrategiaAleatoria());
   const board = Array.from({length: 10}, () => Array(10).fill(null));
   // La IA ocupa las filas 0-3 y su vanguardia es la 3, así que se voltea:
   // la fila 0 de la formación (vanguardia) va a la fila 3 del tablero.
@@ -158,30 +160,16 @@ function aiSetup() {
   return board;
 }
 
-function aiMove(board, lagos, reglas) {
-  const moves = [];
-  for (let r = 0; r < 10; r++)
-    for (let c = 0; c < 10; c++) {
-      const p = board[r][c];
-      if (p?.player !== "ai") continue;
-      for (const [tr, tc] of getValidMoves(board, r, c, lagos, reglas)) {
-        const t = board[tr][tc];
-        let score = (tr - r) * 4;
-        if (t?.player === "human") {
-          if (t.name === "Flag") { score += 9999; }
-          else if (t.revealed) {
-            const res = resolveBattle(p.name, t.name);
-            score += res === "attacker" ? 80 + PIECES[t.name].rank * 8
-                   : res === "both"     ? 10
-                   : -60;
-          } else { score += 25; }
-        }
-        moves.push({ fr: r, fc: c, tr, tc, score });
-      }
-    }
-  if (!moves.length) return null;
-  moves.sort((a, b) => b.score - a.score);
-  return moves.slice(0, Math.min(6, moves.length))[Math.floor(Math.random() * Math.min(6, moves.length))];
+// Toda la inteligencia vive en shared/ia.js, donde se le pueden escribir tests.
+// Aquí solo se traduce lo que el tablero sabe a lo que la IA necesita.
+function aiMove(board, lagos, reglas, nivel, bajasDelRival) {
+  const j = elegirJugadaIA(board, {
+    lagos,
+    alcanceOficiales: reglas.alcanceOficiales,
+    nivel,
+    bajasDelRival,
+  });
+  return j;
 }
 
 function checkWinner(board, lagos, reglas) {
@@ -599,6 +587,7 @@ function useHuecoDeTablero(camara) {
 const CAMARA_POR_DEFECTO = { inclinacion: 26, tamano: 62 };
 const INCLINACION_MAX = 45;
 const CLAVE_CAMARA = "stratego:camara";
+const CLAVE_NIVEL = "stratego:nivelIA";
 
 function leerCamaraGuardada() {
   try {
@@ -672,7 +661,7 @@ function ControlesCamara({ camara, onCambiar }) {
 }
 
 // ─── FASE DE DESPLIEGUE ───────────────────────────────────────────────────────
-function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVolver, camara, onCambiarCamara }) {
+function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVolver, camara, onCambiarCamara, nivelIA, onCambiarNivel }) {
   const relieve = camara.inclinacion > 0;
   const celda = camara.tamano;
   const [marcoRef, hueco] = useHuecoDeTablero(camara);
@@ -789,7 +778,7 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
 
   function startGame() {
     if (!allPlaced) return;
-    const aiBoard = aiSetup();
+    const aiBoard = aiSetup(NIVELES_IA[nivelIA]);
     for (let r = 6; r < 10; r++)
       for (let c = 0; c < 10; c++)
         aiBoard[r][c] = placed[r][c]
@@ -862,6 +851,31 @@ function SetupPhase({ onReady, lagos, aguaId, onCambiarAgua, reglas, modo, onVol
       </div>
 
       <ControlesCamara camara={camara} onCambiar={onCambiarCamara} />
+
+      {/* Nivel del oponente */}
+      <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", justifyContent:"center" }}>
+        <span style={{ fontSize:11, color:T.textSoft, letterSpacing:1.4, fontWeight:700, textTransform:"uppercase" }}>
+          Rival
+        </span>
+        {Object.entries(NIVELES_IA).map(([id, n]) => {
+          const activo = nivelIA === id;
+          return (
+            <button key={id} onClick={() => onCambiarNivel(id)} title={n.detalle}
+              style={{
+                padding:"5px 12px", borderRadius:20,
+                background: activo ? T.brassFaint : "rgba(247,238,221,0.05)",
+                border: activo ? `1.5px solid ${T.brass}` : `1px solid ${T.panelBorder}`,
+                color: activo ? T.brassBright : T.textSoft,
+                fontFamily:FONTS.ui, fontSize:11.5, fontWeight: activo ? 700 : 500,
+                cursor:"pointer", transition:"all 0.12s",
+              }}>{n.label}</button>
+          );
+        })}
+      </div>
+      <p style={{ margin:"-6px 0 0", maxWidth:620, textAlign:"center",
+                  fontSize:11.5, color:T.textSoft, lineHeight:1.45 }}>
+        {NIVELES_IA[nivelIA]?.detalle}
+      </p>
 
       {/* Formaciones de despliegue */}
       <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", justifyContent:"center" }}>
@@ -1194,7 +1208,8 @@ function AiMoveArrow({ aiMoveAnim, celda }) {
 }
 
 // ─── TABLERO DE JUEGO ─────────────────────────────────────────────────────────
-function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiarCamara }) {
+function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiarCamara, nivelIA }) {
+  const nivel = NIVELES_IA[nivelIA] ?? NIVELES_IA[NIVEL_IA_POR_DEFECTO];
   const relieve = camara.inclinacion > 0;
   const celda = camara.tamano;
   const [marcoRef, hueco] = useHuecoDeTablero(camara);
@@ -1315,7 +1330,7 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
     setTurn("ai");
     setAiThinking(true);
     programar(() => {
-      const move = aiMove(b, lagos, reglas);
+      const move = aiMove(b, lagos, reglas, nivel, bajas.human);
       if (!move) { setTurn("human"); setAiThinking(false); return; }
       setAiThinking(false);
       setAiMoveAnim({ ...move });
@@ -1627,7 +1642,9 @@ function GameBoard({ board: initBoard, onReset, lagos, reglas, camara, onCambiar
           background: turn==="human" ? T.youBg : T.themBg,
           border:`1px solid ${turn==="human" ? T.youBorder : T.themBorder}`,
         }}>
-          <div style={{ fontSize:10, color:T.textSoft, letterSpacing:1.6, marginBottom:4, fontWeight:700 }}>TURNO</div>
+          <div style={{ fontSize:10, color:T.textSoft, letterSpacing:1.6, marginBottom:4, fontWeight:700 }}>
+            TURNO · <span style={{ color:T.brass }}>{nivel.label}</span>
+          </div>
           <div style={{ color: turn==="human" ? T.youText : T.themText, fontSize:15, fontWeight:700 }}>
             {turn==="human" ? "Te toca" : aiThinking ? "Pensando…" : aiMoveAnim ? "Moviéndose…" : "IA"}
           </div>
@@ -1792,6 +1809,16 @@ export default function Stratego() {
 
   // Cámara: inclinación y cercanía del tablero. Es solo apariencia, no cambia
   // ninguna regla. Se recuerda entre partidas y entre visitas.
+  // Nivel del oponente. Se recuerda, como la cámara.
+  const [nivelIA, setNivelIA] = useState(() => {
+    try { return localStorage.getItem(CLAVE_NIVEL) ?? NIVEL_IA_POR_DEFECTO; }
+    catch { return NIVEL_IA_POR_DEFECTO; }
+  });
+  function cambiarNivel(id) {
+    setNivelIA(id);
+    try { localStorage.setItem(CLAVE_NIVEL, id); } catch { /* sin memoria, da igual */ }
+  }
+
   const [camara, setCamara] = useState(leerCamaraGuardada);
   function cambiarCamara(nueva) {
     setCamara(nueva);
@@ -1943,11 +1970,12 @@ export default function Stratego() {
           lagos={lagos} aguaId={aguaId} onCambiarAgua={cambiarAgua}
           reglas={reglas} modo={modo} onVolver={volverAlInicio}
           camara={camara} onCambiarCamara={cambiarCamara}
+          nivelIA={nivelIA} onCambiarNivel={cambiarNivel}
         />
       )}
       {modo && phase === "game" && gameBoard && (
         <GameBoard
-          board={gameBoard} lagos={lagos} reglas={reglas}
+          board={gameBoard} lagos={lagos} reglas={reglas} nivelIA={nivelIA}
           camara={camara} onCambiarCamara={cambiarCamara}
           onReset={() => { setGameBoard(null); setPhase("setup"); }}
         />
